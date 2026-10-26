@@ -15,14 +15,12 @@ import {
 
 const router = Router();
 
-// Public routes
 router.get(
   "/lots",
   validate(lotQuerySchema),
   asyncHandler(catalogController.listLots),
 );
 
-// Authenticated auctioneer/admin: own lots (must be declared before /lots/:id)
 router.get(
   "/lots/mine",
   authenticate,
@@ -33,12 +31,10 @@ router.get(
 
 router.get("/lots/:id", asyncHandler(catalogController.getLotById));
 
-// Public routes - Cardex Pokémon catalog
 router.get("/cards", asyncHandler(cardexController.searchCards));
 
 router.get("/cards/:id", asyncHandler(cardexController.getCardById));
 
-// Protected routes - Auctioneer/Admin manage the product catalog
 router.use(authenticate);
 router.post(
   "/lots",
