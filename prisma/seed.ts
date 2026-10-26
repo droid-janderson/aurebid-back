@@ -15,7 +15,6 @@ const SEED_NOW = new Date();
 const HOUR = 60 * 60 * 1000;
 const DAY = 24 * HOUR;
 
-/** Data relativa ao momento em que o seed foi executado. */
 const hoursFromNow = (hours: number): Date =>
   new Date(SEED_NOW.getTime() + hours * HOUR);
 const daysFromNow = (days: number): Date =>
@@ -33,10 +32,6 @@ interface SeedBidInput {
   previousHash: string | null;
 }
 
-/**
- * Gera o hash do registro de auditoria encadeado:
- * sha256(previousHash | lotId | bidId | amount | createdAtISO)
- */
 function hashBid(input: {
   previousHash: string | null;
   lotId: string;
@@ -54,10 +49,7 @@ function hashBid(input: {
 
   return createHash("sha256").update(payload).digest("hex");
 }
-/**
- * Cria (ou atualiza) um lance e seu registro de auditoria encadeado.
- * Retorna o hash gerado, para encadear o próximo lance do mesmo lote.
- */
+
 async function seedBid(input: SeedBidInput): Promise<string> {
   const bid = await prisma.bid.upsert({
     where: { id: input.id },

@@ -22,19 +22,15 @@ const startServer = async (): Promise<void> => {
       );
     });
 
-    // Initialize Socket.io
     initializeSocketServer(server);
     console.log("🔌 Socket.io server initialized");
 
-    // Start auction jobs (every 30 seconds)
     const jobInterval = setInterval(() => {
       runAuctionJobs().catch(console.error);
     }, 30000);
 
-    // Run once on startup
     runAuctionJobs().catch(console.error);
 
-    // Graceful shutdown
     const shutdown = async (signal: string): Promise<void> => {
       console.log(`\n${signal} received. Starting graceful shutdown...`);
 
@@ -47,7 +43,6 @@ const startServer = async (): Promise<void> => {
         process.exit(0);
       });
 
-      // Force close after 30 seconds
       setTimeout(() => {
         console.error("Forced shutdown after timeout");
         process.exit(1);
@@ -57,7 +52,6 @@ const startServer = async (): Promise<void> => {
     process.on("SIGTERM", () => shutdown("SIGTERM"));
     process.on("SIGINT", () => shutdown("SIGINT"));
 
-    // Handle uncaught exceptions
     process.on("uncaughtException", (error) => {
       console.error("Uncaught Exception:", error);
       shutdown("UNCAUGHT_EXCEPTION");

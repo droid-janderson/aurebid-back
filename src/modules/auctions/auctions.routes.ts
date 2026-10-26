@@ -1,48 +1,71 @@
-import { Router } from 'express';
-import { asyncHandler } from '../../shared/middlewares';
-import { validate } from '../../shared/middlewares';
-import * as auctionController from './auctions.controller';
+import { Router } from "express";
+import { asyncHandler } from "../../shared/middlewares";
+import { validate } from "../../shared/middlewares";
+import * as auctionController from "./auctions.controller";
 import {
   auctionQuerySchema,
   placeBidSchema,
   bidQuerySchema,
   updateLotStatusSchema,
-} from './auctions.schemas';
-import { authenticate, authorize } from '../../shared/middlewares/auth.middleware';
+} from "./auctions.schemas";
+import {
+  authenticate,
+  authorize,
+} from "../../shared/middlewares/auth.middleware";
 
 const router = Router();
 
-// Admin listing must be declared before the /:id routes
 router.get(
-  '/admin/all',
+  "/admin/all",
   authenticate,
-  authorize(['ADMIN']),
+  authorize(["ADMIN"]),
   validate(auctionQuerySchema),
-  asyncHandler(auctionController.listAllAuctions)
+  asyncHandler(auctionController.listAllAuctions),
 );
 
-// Public routes
-router.get('/', validate(auctionQuerySchema), asyncHandler(auctionController.listAuctions));
-router.get('/:id', asyncHandler(auctionController.getAuctionById));
-router.get('/:id/bids', validate(bidQuerySchema), asyncHandler(auctionController.getAuctionBids));
+router.get(
+  "/",
+  validate(auctionQuerySchema),
+  asyncHandler(auctionController.listAuctions),
+);
+router.get("/:id", asyncHandler(auctionController.getAuctionById));
+router.get(
+  "/:id/bids",
+  validate(bidQuerySchema),
+  asyncHandler(auctionController.getAuctionBids),
+);
 
-// Protected routes
 router.use(authenticate);
 
-// Auctioneer/Admin lifecycle
-router.post('/:id/publish', authorize(['AUCTIONEER', 'ADMIN']), asyncHandler(auctionController.publishAuction));
-router.post('/:id/cancel', authorize(['AUCTIONEER', 'ADMIN']), asyncHandler(auctionController.cancelAuction));
-router.post('/:id/end', authorize(['AUCTIONEER', 'ADMIN']), asyncHandler(auctionController.endAuction));
-
-// Bidding
 router.post(
-  '/:id/bids',
-  authorize(['BIDDER', 'AUCTIONEER', 'ADMIN']),
+  "/:id/publish",
+  authorize(["AUCTIONEER", "ADMIN"]),
+  asyncHandler(auctionController.publishAuction),
+);
+router.post(
+  "/:id/cancel",
+  authorize(["AUCTIONEER", "ADMIN"]),
+  asyncHandler(auctionController.cancelAuction),
+);
+router.post(
+  "/:id/end",
+  authorize(["AUCTIONEER", "ADMIN"]),
+  asyncHandler(auctionController.endAuction),
+);
+
+router.post(
+  "/:id/bids",
+  authorize(["BIDDER", "AUCTIONEER", "ADMIN"]),
   validate(placeBidSchema),
-  asyncHandler(auctionController.placeBid)
+  asyncHandler(auctionController.placeBid),
 );
 
 // Admin
-router.put('/:id/status', authorize(['ADMIN']), validate(updateLotStatusSchema), asyncHandler(auctionController.updateAuctionStatus));
+router.put(
+  "/:id/status",
+  authorize(["ADMIN"]),
+  validate(updateLotStatusSchema),
+  asyncHandler(auctionController.updateAuctionStatus),
+);
 
 export default router;
