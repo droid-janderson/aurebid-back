@@ -70,6 +70,24 @@ docker-compose up -d --build
 docker-compose logs -f app
 ```
 
+## 📚 API Documentation
+
+With the server running, the interactive Swagger UI is available at:
+
+- `http://localhost:3000/docs`
+
+At the top of the docs page there are two export buttons:
+
+- **Baixar coleção Postman** — downloads `aurebid.postman_collection.json` with every route, path/query parameters and request body examples, grouped by tag.
+- **Baixar OpenAPI (JSON)** — downloads the raw OpenAPI document.
+
+You can import the Postman collection directly (File → Import). The collection uses the variables `baseUrl` (default `http://localhost:3000`) and `accessToken`. After calling `POST /api/v1/auth/login`, put the returned `accessToken` in the collection variable to authorize the protected routes.
+
+The files are also served directly at:
+
+- `http://localhost:3000/docs/postman.json`
+- `http://localhost:3000/docs/openapi.json`
+
 ## 📁 Project Structure
 
 ```

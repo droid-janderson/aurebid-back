@@ -35,6 +35,7 @@
     "jsonwebtoken": "^9.0.2",
     "morgan": "^1.10.0",
     "socket.io": "^4.7.4",
+    "swagger-ui-express": "^5.0.1",
     "zod": "^4.6.7"
   },
   "devDependencies": {
@@ -44,6 +45,7 @@
     "@types/jsonwebtoken": "^9.0.5",
     "@types/morgan": "^1.9.9",
     "@types/node": "^20.11.20",
+    "@types/swagger-ui-express": "^4.1.8",
     "prisma": "^5.10.0",
     "tsx": "^4.7.1",
     "typescript": "^5.3.3"

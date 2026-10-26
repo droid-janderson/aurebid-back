@@ -11,10 +11,6 @@ import bcrypt from "bcryptjs";
 
 const prisma = new PrismaClient();
 
-// ---------------------------------------------------------------------------
-// Helpers
-// ---------------------------------------------------------------------------
-
 const SEED_NOW = new Date();
 const HOUR = 60 * 60 * 1000;
 const DAY = 24 * HOUR;
@@ -58,7 +54,6 @@ function hashBid(input: {
 
   return createHash("sha256").update(payload).digest("hex");
 }
-
 /**
  * Cria (ou atualiza) um lance e seu registro de auditoria encadeado.
  * Retorna o hash gerado, para encadear o próximo lance do mesmo lote.
@@ -177,16 +172,9 @@ async function seedReservation(input: SeedReservationInput) {
   });
 }
 
-// ---------------------------------------------------------------------------
-// Seed
-// ---------------------------------------------------------------------------
-
 async function main() {
   console.log("🌱 Starting database seed...");
 
-  // -------------------------------------------------------------------------
-  // 1. Usuários
-  // -------------------------------------------------------------------------
   const admin = await prisma.user.upsert({
     where: { email: "admin@aurebid.com" },
     update: {
@@ -252,11 +240,6 @@ async function main() {
     [admin, auctioneer, bidder, bidder2].map((u) => u.email).join(", "),
   );
 
-  // -------------------------------------------------------------------------
-  // 2. Carteiras
-  //    Saldos finais já refletem o settlement do lot-004:
-  //    auctioneer 10.000 + 13.500 | bidder2 40.000 - 13.500
-  // -------------------------------------------------------------------------
   const adminWallet = await seedWallet({
     userId: admin.id,
     balance: "10000.00",
@@ -288,9 +271,6 @@ async function main() {
     "wallet(s)",
   );
 
-  // -------------------------------------------------------------------------
-  // 3. Lotes
-  // -------------------------------------------------------------------------
   const lot001 = await prisma.lot.upsert({
     where: { id: "lot-001" },
     update: {
@@ -508,10 +488,6 @@ async function main() {
     [lot001, lot002, lot003, lot004].map((l) => l.id).join(", "),
   );
 
-  // -------------------------------------------------------------------------
-  // 4. Lances + 5. Auditoria encadeada (BidAudit)
-  // -------------------------------------------------------------------------
-  // lot-001 (ACTIVE): 5.500 -> 6.000 -> 6.500
   const lot001Hash1 = await seedBid({
     id: "bid-001",
     lotId: lot001.id,
@@ -542,7 +518,6 @@ async function main() {
     previousHash: lot001Hash2,
   });
 
-  // lot-004 (SETTLED): 12.000 -> 13.500 (vencedor)
   const lot004Hash1 = await seedBid({
     id: "bid-004",
     lotId: lot004.id,
@@ -568,9 +543,6 @@ async function main() {
 
   console.log("✅ Bids + bid audit chain created");
 
-  // -------------------------------------------------------------------------
-  // 6. Reservas de carteira (uma por walletId + lotId)
-  // -------------------------------------------------------------------------
   await seedReservation({
     walletId: bidderWallet.id,
     lotId: lot001.id,
@@ -605,9 +577,6 @@ async function main() {
 
   console.log("✅ Wallet reservations created");
 
-  // -------------------------------------------------------------------------
-  // 7. Settlement do lot-004 + transações financeiras
-  // -------------------------------------------------------------------------
   const settlement = await prisma.settlement.upsert({
     where: { lotId: lot004.id },
     update: {
@@ -675,9 +644,6 @@ async function main() {
 
   console.log("✅ Settlement + wallet transactions created");
 
-  // -------------------------------------------------------------------------
-  // 8. Resumo
-  // -------------------------------------------------------------------------
   console.log("\n🎉 Database seed completed successfully!");
   console.log("\n📋 Test credentials:");
   console.log("   Admin:       admin@aurebid.com       / admin123");

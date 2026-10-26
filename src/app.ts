@@ -8,6 +8,10 @@ import { errorHandler, notFoundHandler, asyncHandler } from './shared/middleware
 import { ApiResponse } from './shared/types';
 import { connectDatabase } from './config/database';
 import routes from './routes';
+import swaggerUi from 'swagger-ui-express';
+import { swaggerDocument, swaggerUiOptions } from './docs/swagger';
+import { buildPostmanCollection } from './docs/postman';
+import { swaggerCustomJs } from './docs/swagger-custom';
 
 export function createApp(): Application {
   const app = express();
@@ -37,6 +41,26 @@ export function createApp(): Application {
   if (env.nodeEnv !== 'test') {
     app.use(morgan(env.nodeEnv === 'development' ? 'dev' : 'combined'));
   }
+
+  // API documentation (mounted before the rate limiter so the Swagger UI assets
+  // do not consume the API request quota)
+  const postmanCollection = buildPostmanCollection(swaggerDocument);
+
+  app.get('/docs.json', (_req: Request, res: Response) => {
+    res.json(swaggerDocument);
+  });
+  app.get('/docs/openapi.json', (_req: Request, res: Response) => {
+    res.attachment('aurebid.openapi.json');
+    res.json(swaggerDocument);
+  });
+  app.get('/docs/postman.json', (_req: Request, res: Response) => {
+    res.attachment('aurebid.postman_collection.json');
+    res.json(postmanCollection);
+  });
+  app.get('/docs/postman-export.js', (_req: Request, res: Response) => {
+    res.type('application/javascript').send(swaggerCustomJs);
+  });
+  app.use('/docs', swaggerUi.serve, swaggerUi.setup(swaggerDocument, swaggerUiOptions));
 
   // Rate limiting
   const limiter = rateLimit({
