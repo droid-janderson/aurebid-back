@@ -30,6 +30,8 @@ function serializeBatch(batch: any) {
 
   return {
     ...batch,
+    startingPrice: formatDecimal(batch.startingPrice),
+    minimumIncrement: formatDecimal(batch.minimumIncrement),
     currentPrice: highestBid
       ? formatDecimal(highestBid.amount)
       : formatDecimal(batch.startingPrice),

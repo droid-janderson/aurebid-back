@@ -11,7 +11,6 @@ import {
   BidError,
   WalletError,
   SettlementError,
-  RateLimitError,
 } from "../errors";
 import { ApiResponse } from "../types";
 import { env } from "../../config/env";
@@ -148,11 +147,5 @@ export const validate = (schema: any) => {
     } catch (error) {
       next(error);
     }
-  };
-};
-
-export const customRateLimit = (maxRequests: number, windowMs: number) => {
-  return (req: Request, res: Response, next: NextFunction): void => {
-    next();
   };
 };

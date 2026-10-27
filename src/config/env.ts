@@ -16,10 +16,6 @@ interface EnvConfig {
   cors: {
     origin: string;
   };
-  rateLimit: {
-    windowMs: number;
-    maxRequests: number;
-  };
   socket: {
     corsOrigin: string;
   };
@@ -59,10 +55,6 @@ export const env: EnvConfig = {
   },
   cors: {
     origin: getEnv('CORS_ORIGIN', 'http://localhost:3001'),
-  },
-  rateLimit: {
-    windowMs: getNumberEnv('RATE_LIMIT_WINDOW_MS', 900000),
-    maxRequests: getNumberEnv('RATE_LIMIT_MAX_REQUESTS', 100),
   },
   socket: {
     corsOrigin: getEnv('SOCKET_IO_CORS_ORIGIN', 'http://localhost:3001'),

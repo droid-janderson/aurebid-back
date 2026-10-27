@@ -29,7 +29,6 @@ export const healthPaths = {
       security: [],
       responses: {
         200: response('Serviço saudável.', healthOk),
-        429: ERR.tooManyRequests,
         500: ERR.internalServerError,
       },
     },

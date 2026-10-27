@@ -22,13 +22,14 @@ import {
   createSettlementForBatch,
   releaseBatchReservations,
 } from "../settlements/settlements.service";
+import { verifyBidAuditChain } from "../../shared/utils/audit";
 
 const batchInclude = {
   seller: { select: { id: true, name: true, email: true } },
   bids: {
     orderBy: { amount: "desc" as const },
     take: 1,
-    select: { id: true, amount: true, createdAt: true },
+    select: { id: true, bidderId: true, amount: true, createdAt: true },
   },
   _count: { select: { bids: true } },
 };
@@ -38,6 +39,8 @@ function serializeBatch(batch: any) {
 
   return {
     ...batch,
+    startingPrice: formatDecimal(batch.startingPrice),
+    minimumIncrement: formatDecimal(batch.minimumIncrement),
     currentPrice: highestBid
       ? formatDecimal(highestBid.amount)
       : formatDecimal(batch.startingPrice),
@@ -310,6 +313,14 @@ export const placeBid = asyncHandler(
           }
 
           const highestBid = batch.bids[0];
+
+          if (highestBid && highestBid.bidderId === user.id) {
+            throw new BidError(
+              "You are already the highest bidder for this batch",
+              "ALREADY_LEADING",
+            );
+          }
+
           const highestAmount = highestBid
             ? formatDecimal(highestBid.amount)
             : null;
@@ -450,7 +461,7 @@ export const getAuctionBids = asyncHandler(
         orderBy: { amount: "desc" },
         include: {
           bidder: { select: { id: true, name: true } },
-          audit: { select: { sequence: true, currentHash: true } },
+          audit: { select: { sequence: true, previousHash: true, currentHash: true } },
         },
       }),
       prisma.bid.count({ where }),
@@ -460,6 +471,80 @@ export const getAuctionBids = asyncHandler(
       success: true,
       data: bids.map((bid) => ({ ...bid, amount: formatDecimal(bid.amount) })),
       meta: buildPaginatedResponse(bids, total, pageNum, limitNum).meta,
+    });
+  },
+);
+
+export const getPublicAudit = asyncHandler(
+  async (req: RequestWithUser, res: Response) => {
+    const { id } = req.params;
+    const { page = 1, limit = 100 } = req.query;
+
+    const batch = await prisma.batch.findUnique({
+      where: { id },
+      select: { id: true },
+    });
+    if (!batch) {
+      throw new NotFoundError("Batch");
+    }
+
+    const {
+      page: pageNum,
+      limit: limitNum,
+      skip,
+    } = parsePaginationParams(page, limit);
+
+    const [entries, total] = await Promise.all([
+      prisma.bidAudit.findMany({
+        where: { batchId: id },
+        skip,
+        take: limitNum,
+        orderBy: { sequence: "asc" },
+        include: {
+          bid: {
+            include: { bidder: { select: { id: true } } },
+          },
+        },
+      }),
+      prisma.bidAudit.count({ where: { batchId: id } }),
+    ]);
+
+    res.json({
+      success: true,
+      data: entries.map((entry) => ({
+        sequence: entry.sequence,
+        previousHash: entry.previousHash,
+        currentHash: entry.currentHash,
+        createdAt: entry.createdAt,
+        bidId: entry.bidId,
+        amount: entry.bid ? formatDecimal(entry.bid.amount) : null,
+        bidder: { id: entry.bid?.bidder?.id ?? null },
+      })),
+      meta: buildPaginatedResponse(entries, total, pageNum, limitNum).meta,
+    });
+  },
+);
+
+export const verifyPublicAudit = asyncHandler(
+  async (req: RequestWithUser, res: Response) => {
+    const { id } = req.params;
+
+    const batch = await prisma.batch.findUnique({
+      where: { id },
+      select: { id: true },
+    });
+    if (!batch) {
+      throw new NotFoundError("Batch");
+    }
+
+    const verification = await verifyBidAuditChain(id);
+
+    res.json({
+      success: true,
+      data: {
+        batchId: id,
+        ...verification,
+      },
     });
   },
 );

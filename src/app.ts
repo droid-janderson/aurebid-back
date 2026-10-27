@@ -2,7 +2,6 @@ import express, { Application, Request, Response, NextFunction } from "express";
 import cors from "cors";
 import helmet from "helmet";
 import morgan from "morgan";
-import rateLimit from "express-rate-limit";
 import { env } from "./config/env";
 import {
   errorHandler,
@@ -67,19 +66,6 @@ export function createApp(): Application {
     swaggerUi.serve,
     swaggerUi.setup(swaggerDocument, swaggerUiOptions),
   );
-
-  const limiter = rateLimit({
-    windowMs: env.rateLimit.windowMs,
-    max: env.rateLimit.maxRequests,
-    message: {
-      success: false,
-      message: "Too many requests, please try again later",
-      error: "RATE_LIMIT_EXCEEDED",
-    } as ApiResponse,
-    standardHeaders: true,
-    legacyHeaders: false,
-  });
-  app.use(limiter);
 
   // Health check endpoint
   app.get(

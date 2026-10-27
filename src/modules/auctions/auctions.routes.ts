@@ -34,6 +34,8 @@ router.get(
   validate(bidQuerySchema),
   asyncHandler(auctionController.getAuctionBids),
 );
+router.get("/:id/audit", asyncHandler(auctionController.getPublicAudit));
+router.get("/:id/audit/verify", asyncHandler(auctionController.verifyPublicAudit));
 
 router.use(authenticate);
 
@@ -55,7 +57,7 @@ router.post(
 
 router.post(
   "/:id/bids",
-  authorize(["BIDDER", "AUCTIONEER", "ADMIN"]),
+  authorize(["BIDDER"]),
   validate(placeBidSchema),
   asyncHandler(auctionController.placeBid),
 );

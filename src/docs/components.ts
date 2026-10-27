@@ -254,7 +254,6 @@ export const components = {
     Conflict: errorResponse(
       "A operação entra em conflito com o estado atual do recurso.",
     ),
-    TooManyRequests: errorResponse("Limite de requisições excedido."),
     InternalServerError: errorResponse("Erro interno inesperado."),
   },
 

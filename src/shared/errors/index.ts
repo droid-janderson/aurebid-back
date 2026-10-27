@@ -82,13 +82,6 @@ export class BadRequestError extends AppError {
   }
 }
 
-export class RateLimitError extends AppError {
-  constructor(message: string = "Too many requests", retryAfter?: number) {
-    super(message, 429, "RATE_LIMIT_EXCEEDED", { retryAfter });
-    Object.setPrototypeOf(this, RateLimitError.prototype);
-  }
-}
-
 export class AuctionError extends AppError {
   constructor(
     message: string,

@@ -27,7 +27,6 @@ const batchListParams = [
 const protectedErrors = {
   401: ERR.unauthorized,
   403: ERR.forbidden,
-  429: ERR.tooManyRequests,
   500: ERR.internalServerError,
 };
 
@@ -44,7 +43,6 @@ export const catalogPaths = {
       responses: {
         200: response("Lista de lotes.", paginated("Batch")),
         400: ERR.badRequest,
-        429: ERR.tooManyRequests,
         500: ERR.internalServerError,
       },
     },
@@ -65,7 +63,6 @@ export const catalogPaths = {
         401: ERR.unauthorized,
         403: ERR.forbidden,
         404: ERR.notFound,
-        429: ERR.tooManyRequests,
         500: ERR.internalServerError,
       },
     },
@@ -100,7 +97,6 @@ export const catalogPaths = {
       responses: {
         200: response("Lote encontrado.", successBody(ref("Batch"))),
         404: ERR.notFound,
-        429: ERR.tooManyRequests,
         500: ERR.internalServerError,
       },
     },
@@ -123,7 +119,6 @@ export const catalogPaths = {
         403: ERR.forbidden,
         404: ERR.notFound,
         409: ERR.conflict,
-        429: ERR.tooManyRequests,
         500: ERR.internalServerError,
       },
     },
@@ -144,7 +139,6 @@ export const catalogPaths = {
         403: ERR.forbidden,
         404: ERR.notFound,
         409: ERR.conflict,
-        429: ERR.tooManyRequests,
         500: ERR.internalServerError,
       },
     },
@@ -185,7 +179,6 @@ export const catalogPaths = {
             },
           },
         ),
-        429: ERR.tooManyRequests,
         502: response("Falha ao consultar a API Cardex.", {
           type: "object",
           properties: {
@@ -216,7 +209,6 @@ export const catalogPaths = {
             error: { type: "string", example: "Carta não encontrada." },
           },
         }),
-        429: ERR.tooManyRequests,
         502: response("Falha ao consultar a API Cardex.", {
           type: "object",
           properties: {

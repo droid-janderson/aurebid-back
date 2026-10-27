@@ -43,7 +43,6 @@ export const ERR = {
   forbidden: { $ref: '#/components/responses/Forbidden' },
   notFound: { $ref: '#/components/responses/NotFound' },
   conflict: { $ref: '#/components/responses/Conflict' },
-  tooManyRequests: { $ref: '#/components/responses/TooManyRequests' },
   internalServerError: { $ref: '#/components/responses/InternalServerError' },
 } as const;
 

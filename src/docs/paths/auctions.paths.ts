@@ -24,7 +24,6 @@ const auctionListParams = [
 const authErrors = {
   401: ERR.unauthorized,
   403: ERR.forbidden,
-  429: ERR.tooManyRequests,
   500: ERR.internalServerError,
 };
 
@@ -41,7 +40,6 @@ export const auctionsPaths = {
       responses: {
         200: response("Lista de leilões.", paginated("Batch")),
         400: ERR.badRequest,
-        429: ERR.tooManyRequests,
         500: ERR.internalServerError,
       },
     },
@@ -59,7 +57,6 @@ export const auctionsPaths = {
       responses: {
         200: response("Leilão encontrado.", successBody(ref("Batch"))),
         404: ERR.notFound,
-        429: ERR.tooManyRequests,
         500: ERR.internalServerError,
       },
     },
@@ -83,7 +80,6 @@ export const auctionsPaths = {
         200: response("Lista de lances.", paginated("Bid")),
         400: ERR.badRequest,
         404: ERR.notFound,
-        429: ERR.tooManyRequests,
         500: ERR.internalServerError,
       },
     },
@@ -105,7 +101,6 @@ export const auctionsPaths = {
         401: ERR.unauthorized,
         403: ERR.forbidden,
         404: ERR.notFound,
-        429: ERR.tooManyRequests,
         500: ERR.internalServerError,
       },
     },
@@ -147,7 +142,6 @@ export const auctionsPaths = {
         403: ERR.forbidden,
         404: ERR.notFound,
         409: ERR.conflict,
-        429: ERR.tooManyRequests,
         500: ERR.internalServerError,
       },
     },
@@ -171,7 +165,6 @@ export const auctionsPaths = {
         403: ERR.forbidden,
         404: ERR.notFound,
         409: ERR.conflict,
-        429: ERR.tooManyRequests,
         500: ERR.internalServerError,
       },
     },
@@ -213,7 +206,6 @@ export const auctionsPaths = {
         403: ERR.forbidden,
         404: ERR.notFound,
         409: ERR.conflict,
-        429: ERR.tooManyRequests,
         500: ERR.internalServerError,
       },
     },
@@ -248,7 +240,6 @@ export const auctionsPaths = {
         401: ERR.unauthorized,
         403: ERR.forbidden,
         404: ERR.notFound,
-        429: ERR.tooManyRequests,
         500: ERR.internalServerError,
       },
     },

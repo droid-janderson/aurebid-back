@@ -7,7 +7,6 @@ const adminErrors = {
   400: ERR.badRequest,
   401: ERR.unauthorized,
   403: ERR.forbidden,
-  429: ERR.tooManyRequests,
   500: ERR.internalServerError,
 };
 
