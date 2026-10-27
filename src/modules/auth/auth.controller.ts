@@ -277,7 +277,7 @@ export const listUsers = asyncHandler(
           ...publicUserSelect,
           wallet: { select: { id: true, balance: true } },
           _count: {
-            select: { lots: true, bids: true, purchases: true, sales: true },
+            select: { batchs: true, bids: true, purchases: true, sales: true },
           },
         },
       }),
@@ -306,12 +306,12 @@ export const getUserById = asyncHandler(
             balance: true,
             reservations: {
               where: { status: "ACTIVE" },
-              select: { id: true, lotId: true, amount: true, status: true },
+              select: { id: true, batchId: true, amount: true, status: true },
             },
           },
         },
         _count: {
-          select: { lots: true, bids: true, purchases: true, sales: true },
+          select: { batchs: true, bids: true, purchases: true, sales: true },
         },
       },
     });
@@ -366,7 +366,7 @@ export const deleteUser = asyncHandler(
           },
         },
         _count: {
-          select: { lots: true, bids: true, purchases: true, sales: true },
+          select: { batchs: true, bids: true, purchases: true, sales: true },
         },
       },
     });
@@ -375,10 +375,10 @@ export const deleteUser = asyncHandler(
       throw new NotFoundError("User");
     }
 
-    const { lots, bids, purchases, sales } = user._count;
-    if (lots > 0 || bids > 0 || purchases > 0 || sales > 0) {
+    const { batchs, bids, purchases, sales } = user._count;
+    if (batchs > 0 || bids > 0 || purchases > 0 || sales > 0) {
       throw new ConflictError(
-        "Cannot delete a user with lots, bids or settlements",
+        "Cannot delete a user with batchs, bids or settlements",
       );
     }
 

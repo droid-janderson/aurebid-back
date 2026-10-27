@@ -5,17 +5,17 @@ import {
   NotFoundError,
   AuthorizationError,
   ConflictError,
-  LotError,
+  Loterror,
 } from "../../shared/errors";
 import { RequestWithUser } from "../../shared/types";
 import {
   parsePaginationParams,
   buildPaginatedResponse,
   formatDecimal,
-  getLotTiming,
+  getBatchTiming,
 } from "../../shared/utils";
 
-const lotInclude = {
+const batchInclude = {
   seller: { select: { id: true, name: true, email: true } },
   bids: {
     orderBy: { amount: "desc" as const },
@@ -25,16 +25,16 @@ const lotInclude = {
   _count: { select: { bids: true } },
 };
 
-function serializeLot(lot: any) {
-  const highestBid = lot.bids?.[0];
+function serializeBatch(batch: any) {
+  const highestBid = batch.bids?.[0];
 
   return {
-    ...lot,
+    ...batch,
     currentPrice: highestBid
       ? formatDecimal(highestBid.amount)
-      : formatDecimal(lot.startingPrice),
-    bidCount: lot._count?.bids ?? 0,
-    timing: getLotTiming(lot.startsAt, lot.endsAt),
+      : formatDecimal(batch.startingPrice),
+    bidCount: batch._count?.bids ?? 0,
+    timing: getBatchTiming(batch.startsAt, batch.endsAt),
   };
 }
 
@@ -43,7 +43,7 @@ function parseDateRange(startsAt?: string, endsAt?: string) {
   const end = endsAt ? new Date(endsAt) : null;
 
   if (start && end && start >= end) {
-    throw new LotError(
+    throw new Loterror(
       "End date must be after start date",
       "INVALID_DATE_RANGE",
     );
@@ -52,7 +52,7 @@ function parseDateRange(startsAt?: string, endsAt?: string) {
   return { start, end };
 }
 
-export const createLot = asyncHandler(
+export const createBatch = asyncHandler(
   async (req: RequestWithUser, res: Response) => {
     const user = req.user!;
     const {
@@ -73,7 +73,7 @@ export const createLot = asyncHandler(
     const ownerId = sellerId ?? user.id;
 
     if (ownerId !== user.id && user.role !== "ADMIN") {
-      throw new AuthorizationError("You can only create lots for yourself");
+      throw new AuthorizationError("You can only create batchs for yourself");
     }
 
     const seller = await prisma.user.findUnique({ where: { id: ownerId } });
@@ -82,16 +82,16 @@ export const createLot = asyncHandler(
     }
 
     if (seller.role === "BIDDER") {
-      throw new LotError("Bidders cannot own lots", "INVALID_SELLER");
+      throw new Loterror("Bidders cannot own batchs", "INVALID_SELLER");
     }
 
     const { start, end } = parseDateRange(startsAt, endsAt);
 
     if (status === "SCHEDULED" && start && start.getTime() > end!.getTime()) {
-      throw new LotError("Invalid schedule window", "INVALID_DATE_RANGE");
+      throw new Loterror("Invalid schedule window", "INVALID_DATE_RANGE");
     }
 
-    const lot = await prisma.lot.create({
+    const batch = await prisma.batch.create({
       data: {
         sellerId: ownerId,
         productSource,
@@ -106,18 +106,18 @@ export const createLot = asyncHandler(
         endsAt: end!,
         status,
       },
-      include: lotInclude,
+      include: batchInclude,
     });
 
     res.status(201).json({
       success: true,
-      message: "Lot created successfully",
-      data: serializeLot(lot),
+      message: "Batch created successfully",
+      data: serializeBatch(batch),
     });
   },
 );
 
-export const listLots = asyncHandler(
+export const listBatchs = asyncHandler(
   async (req: RequestWithUser, res: Response) => {
     const {
       page = 1,
@@ -162,26 +162,26 @@ export const listLots = asyncHandler(
       if (maxPrice) where.startingPrice.lte = parseFloat(maxPrice as string);
     }
 
-    const [lots, total] = await Promise.all([
-      prisma.lot.findMany({
+    const [batchs, total] = await Promise.all([
+      prisma.batch.findMany({
         where,
         skip,
         take: limitNum,
         orderBy: { [sortBy as string]: sortOrder },
-        include: lotInclude,
+        include: batchInclude,
       }),
-      prisma.lot.count({ where }),
+      prisma.batch.count({ where }),
     ]);
 
     res.json({
       success: true,
-      data: lots.map(serializeLot),
-      meta: buildPaginatedResponse(lots, total, pageNum, limitNum).meta,
+      data: batchs.map(serializeBatch),
+      meta: buildPaginatedResponse(batchs, total, pageNum, limitNum).meta,
     });
   },
 );
 
-export const listMyLots = asyncHandler(
+export const listMyBatchs = asyncHandler(
   async (req: RequestWithUser, res: Response) => {
     const user = req.user!;
     const {
@@ -213,30 +213,30 @@ export const listMyLots = asyncHandler(
       ];
     }
 
-    const [lots, total] = await Promise.all([
-      prisma.lot.findMany({
+    const [batchs, total] = await Promise.all([
+      prisma.batch.findMany({
         where,
         skip,
         take: limitNum,
         orderBy: { [sortBy as string]: sortOrder },
-        include: lotInclude,
+        include: batchInclude,
       }),
-      prisma.lot.count({ where }),
+      prisma.batch.count({ where }),
     ]);
 
     res.json({
       success: true,
-      data: lots.map(serializeLot),
-      meta: buildPaginatedResponse(lots, total, pageNum, limitNum).meta,
+      data: batchs.map(serializeBatch),
+      meta: buildPaginatedResponse(batchs, total, pageNum, limitNum).meta,
     });
   },
 );
 
-export const getLotById = asyncHandler(
+export const getBatchById = asyncHandler(
   async (req: RequestWithUser, res: Response) => {
     const { id } = req.params;
 
-    const lot = await prisma.lot.findUnique({
+    const batch = await prisma.batch.findUnique({
       where: { id },
       include: {
         seller: { select: { id: true, name: true, email: true } },
@@ -261,70 +261,72 @@ export const getLotById = asyncHandler(
       },
     });
 
-    if (!lot) {
-      throw new NotFoundError("Lot");
+    if (!batch) {
+      throw new NotFoundError("Batch");
     }
 
     res.json({
       success: true,
-      data: serializeLot(lot),
+      data: serializeBatch(batch),
     });
   },
 );
 
-export const updateLot = asyncHandler(
+export const updateBatch = asyncHandler(
   async (req: RequestWithUser, res: Response) => {
     const user = req.user!;
     const { id } = req.params;
     const data = req.body;
 
-    const lot = await prisma.lot.findUnique({ where: { id } });
-    if (!lot) {
-      throw new NotFoundError("Lot");
+    const batch = await prisma.batch.findUnique({ where: { id } });
+    if (!batch) {
+      throw new NotFoundError("Batch");
     }
 
-    if (user.role !== "ADMIN" && lot.sellerId !== user.id) {
-      throw new AuthorizationError("You can only update your own lots");
+    if (user.role !== "ADMIN" && batch.sellerId !== user.id) {
+      throw new AuthorizationError("You can only update your own batchs");
     }
 
-    if (["ACTIVE", "ENDED", "SETTLED", "CANCELLED"].includes(lot.status)) {
-      throw new ConflictError("Cannot update a lot that is active or finished");
+    if (["ACTIVE", "ENDED", "SETTLED", "CANCELLED"].includes(batch.status)) {
+      throw new ConflictError(
+        "Cannot update a batch that is active or finished",
+      );
     }
 
-    const startsAt = data.startsAt ? new Date(data.startsAt) : lot.startsAt;
-    const endsAt = data.endsAt ? new Date(data.endsAt) : lot.endsAt;
+    const startsAt = data.startsAt ? new Date(data.startsAt) : batch.startsAt;
+    const endsAt = data.endsAt ? new Date(data.endsAt) : batch.endsAt;
 
     if (startsAt >= endsAt) {
-      throw new LotError(
+      throw new Loterror(
         "End date must be after start date",
         "INVALID_DATE_RANGE",
       );
     }
 
-    const updatedLot = await prisma.lot.update({
+    const updatedBatch = await prisma.batch.update({
       where: { id },
       data: {
         ...data,
         startsAt: data.startsAt ? startsAt : undefined,
         endsAt: data.endsAt ? endsAt : undefined,
       },
-      include: lotInclude,
+      include: batchInclude,
     });
 
     res.json({
       success: true,
-      message: "Lot updated successfully",
-      data: serializeLot(updatedLot),
+      message: "Batch updated successfully",
+      data: serializeBatch(updatedBatch),
     });
   },
 );
 
-export const deleteLot = asyncHandler(
+export const deleteBatch = asyncHandler(
   async (req: RequestWithUser, res: Response) => {
     const user = req.user!;
     const { id } = req.params;
 
-    const lot = await prisma.lot.findUnique({
+    const batch = await prisma.batch.findUnique({
       where: { id },
       include: {
         _count: {
@@ -334,32 +336,32 @@ export const deleteLot = asyncHandler(
       },
     });
 
-    if (!lot) {
-      throw new NotFoundError("Lot");
+    if (!batch) {
+      throw new NotFoundError("Batch");
     }
 
-    if (user.role !== "ADMIN" && lot.sellerId !== user.id) {
-      throw new AuthorizationError("You can only delete your own lots");
+    if (user.role !== "ADMIN" && batch.sellerId !== user.id) {
+      throw new AuthorizationError("You can only delete your own batchs");
     }
 
-    if (lot.status !== "DRAFT") {
-      throw new ConflictError("Only draft lots can be deleted");
+    if (batch.status !== "DRAFT") {
+      throw new ConflictError("Only draft batchs can be deleted");
     }
 
     if (
-      lot._count.bids > 0 ||
-      lot._count.reservations > 0 ||
-      lot._count.auditEntries > 0 ||
-      lot.settlement
+      batch._count.bids > 0 ||
+      batch._count.reservations > 0 ||
+      batch._count.auditEntries > 0 ||
+      batch.settlement
     ) {
-      throw new ConflictError("Cannot delete a lot with bids or settlements");
+      throw new ConflictError("Cannot delete a batch with bids or settlements");
     }
 
-    await prisma.lot.delete({ where: { id } });
+    await prisma.batch.delete({ where: { id } });
 
     res.json({
       success: true,
-      message: "Lot deleted successfully",
+      message: "Batch deleted successfully",
     });
   },
 );

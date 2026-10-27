@@ -13,7 +13,7 @@ interface AuthenticatedSocket extends Socket {
     name: string;
     role: string;
   };
-  lotRooms: Set<string>;
+  batchRooms: Set<string>;
 }
 
 let io: SocketIOServer | null = null;
@@ -60,7 +60,7 @@ export function initializeSocketServer(httpServer: HTTPServer): SocketIOServer {
         name: user.name,
         role: user.role,
       };
-      socket.lotRooms = new Set();
+      socket.batchRooms = new Set();
 
       next();
     } catch {
@@ -72,10 +72,10 @@ export function initializeSocketServer(httpServer: HTTPServer): SocketIOServer {
     const authSocket = socket as AuthenticatedSocket;
     console.log(`Socket connected: ${authSocket.user?.name} (${socket.id})`);
 
-    socket.on("auction:join", async (lotId: string) => {
+    socket.on("auction:join", async (batchId: string) => {
       try {
-        const lot = await prisma.lot.findUnique({
-          where: { id: lotId },
+        const batch = await prisma.batch.findUnique({
+          where: { id: batchId },
           include: {
             bids: {
               orderBy: { amount: "desc" },
@@ -86,37 +86,37 @@ export function initializeSocketServer(httpServer: HTTPServer): SocketIOServer {
           },
         });
 
-        if (!lot) {
-          socket.emit("error", { message: "Lot not found" });
+        if (!batch) {
+          socket.emit("error", { message: "Batch not found" });
           return;
         }
 
-        socket.join(`auction:${lotId}`);
-        authSocket.lotRooms.add(lotId);
+        socket.join(`auction:${batchId}`);
+        authSocket.batchRooms.add(batchId);
 
         socket.emit("auction:state", {
-          lotId,
-          status: lot.status,
-          currentPrice: lot.bids[0]
-            ? formatDecimal(lot.bids[0].amount)
-            : formatDecimal(lot.startingPrice),
-          bidCount: lot._count.bids,
+          batchId,
+          status: batch.status,
+          currentPrice: batch.bids[0]
+            ? formatDecimal(batch.bids[0].amount)
+            : formatDecimal(batch.startingPrice),
+          bidCount: batch._count.bids,
           timeRemaining: Math.max(
             0,
-            new Date(lot.endsAt).getTime() - Date.now(),
+            new Date(batch.endsAt).getTime() - Date.now(),
           ),
         });
 
-        console.log(`User ${authSocket.user?.name} joined lot ${lotId}`);
+        console.log(`User ${authSocket.user?.name} joined batch ${batchId}`);
       } catch {
-        socket.emit("error", { message: "Failed to join lot" });
+        socket.emit("error", { message: "Failed to join batch" });
       }
     });
 
-    socket.on("auction:leave", (lotId: string) => {
-      socket.leave(`auction:${lotId}`);
-      authSocket.lotRooms.delete(lotId);
-      console.log(`User ${authSocket.user?.name} left lot ${lotId}`);
+    socket.on("auction:leave", (batchId: string) => {
+      socket.leave(`auction:${batchId}`);
+      authSocket.batchRooms.delete(batchId);
+      console.log(`User ${authSocket.user?.name} left batch ${batchId}`);
     });
 
     socket.on("bid:place", () => {
@@ -139,10 +139,10 @@ export function getSocketServer(): SocketIOServer | null {
 }
 
 export const auctionSocket = {
-  emitNewBid: (lotId: string, bid: any) => {
+  emitNewBid: (batchId: string, bid: any) => {
     if (!io) return;
-    io.to(`auction:${lotId}`).emit("bid:new", {
-      lotId,
+    io.to(`auction:${batchId}`).emit("bid:new", {
+      batchId,
       bid: {
         id: bid.id,
         amount: formatDecimal(bid.amount),
@@ -155,31 +155,34 @@ export const auctionSocket = {
     });
   },
 
-  emitAuctionStatusChange: (lot: any) => {
+  emitAuctionStatusChange: (batch: any) => {
     if (!io) return;
-    io.to(`auction:${lot.id}`).emit("auction:status_change", {
-      lotId: lot.id,
-      status: lot.status,
-      startsAt: lot.startsAt,
-      endsAt: lot.endsAt,
+    io.to(`auction:${batch.id}`).emit("auction:status_change", {
+      batchId: batch.id,
+      status: batch.status,
+      startsAt: batch.startsAt,
+      endsAt: batch.endsAt,
     });
   },
 
-  emitAuctionEnded: (lot: any) => {
+  emitAuctionEnded: (batch: any) => {
     if (!io) return;
-    const winner = lot?.bids?.[0]?.bidder ?? null;
+    const winner = batch?.bids?.[0]?.bidder ?? null;
 
-    io.to(`auction:${lot.id}`).emit("auction:ended", {
-      lotId: lot.id,
-      status: lot.status,
+    io.to(`auction:${batch.id}`).emit("auction:ended", {
+      batchId: batch.id,
+      status: batch.status,
       winner: winner ? { id: winner.id, name: winner.name } : null,
-      finalPrice: lot?.bids?.[0] ? formatDecimal(lot.bids[0].amount) : null,
+      finalPrice: batch?.bids?.[0] ? formatDecimal(batch.bids[0].amount) : null,
     });
   },
 
-  emitAuctionTimer: (lotId: string, timeRemaining: number) => {
+  emitAuctionTimer: (batchId: string, timeRemaining: number) => {
     if (!io) return;
-    io.to(`auction:${lotId}`).emit("auction:timer", { lotId, timeRemaining });
+    io.to(`auction:${batchId}`).emit("auction:timer", {
+      batchId,
+      timeRemaining,
+    });
   },
 
   broadcastToAll: (event: string, data: any) => {

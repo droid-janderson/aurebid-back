@@ -1,4 +1,4 @@
-import { env } from '../../config/env';
+import { env } from "../../config/env";
 import {
   ERR,
   paginated,
@@ -7,28 +7,28 @@ import {
   requestBody,
   response,
   successBody,
-} from './helpers';
+} from "./helpers";
 
 const API = env.apiPrefix;
 
 const walletOperationData = {
-  type: 'object',
+  type: "object",
   properties: {
-    transaction: { $ref: '#/components/schemas/WalletTransaction' },
-    wallet: { $ref: '#/components/schemas/WalletSummary' },
+    transaction: { $ref: "#/components/schemas/WalletTransaction" },
+    wallet: { $ref: "#/components/schemas/WalletSummary" },
   },
 };
 
 export const walletsPaths = {
   [`${API}/wallets`]: {
     get: {
-      tags: ['Wallets'],
-      summary: 'Retorna a carteira do usuário autenticado',
+      tags: ["Wallets"],
+      summary: "Retorna a carteira do usuário autenticado",
       description:
-        'Requer autenticação. Retorna saldo, valor reservado, valor disponível, reservas ativas e as 10 transações mais recentes.',
-      operationId: 'getWallet',
+        "Requer autenticação. Retorna saldo, valor reservado, valor disponível, reservas ativas e as 10 transações mais recentes.",
+      operationId: "getWallet",
       responses: {
-        200: response('Carteira do usuário.', successBody(ref('Wallet'))),
+        200: response("Carteira do usuário.", successBody(ref("Wallet"))),
         401: ERR.unauthorized,
         404: ERR.notFound,
         429: ERR.tooManyRequests,
@@ -39,23 +39,20 @@ export const walletsPaths = {
 
   [`${API}/wallets/transactions`]: {
     get: {
-      tags: ['Wallets'],
-      summary: 'Lista as transações da carteira',
+      tags: ["Wallets"],
+      summary: "Lista as transações da carteira",
       description:
-        'Requer autenticação. Lista paginada das transações do próprio usuário, com filtros por tipo e período.',
-      operationId: 'listTransactions',
+        "Requer autenticação. Lista paginada das transações do próprio usuário, com filtros por tipo e período.",
+      operationId: "listTransactions",
       parameters: [
-        paramRef('PageParam'),
-        paramRef('LimitParam'),
-        paramRef('TypeFilterParam'),
-        paramRef('StartDateParam'),
-        paramRef('EndDateParam'),
+        paramRef("PageParam"),
+        paramRef("LimitParam"),
+        paramRef("TypeFilterParam"),
+        paramRef("StartDateParam"),
+        paramRef("EndDateParam"),
       ],
       responses: {
-        200: response(
-          'Lista de transações.',
-          paginated('WalletTransaction'),
-        ),
+        200: response("Lista de transações.", paginated("WalletTransaction")),
         400: ERR.badRequest,
         401: ERR.unauthorized,
         404: ERR.notFound,
@@ -67,15 +64,15 @@ export const walletsPaths = {
 
   [`${API}/wallets/deposit`]: {
     post: {
-      tags: ['Wallets'],
-      summary: 'Realiza um depósito',
+      tags: ["Wallets"],
+      summary: "Realiza um depósito",
       description:
-        'Requer autenticação. Credita o valor na carteira do usuário e registra uma transação do tipo DEPOSIT.',
-      operationId: 'deposit',
-      requestBody: requestBody(ref('DepositRequest')),
+        "Requer autenticação. Credita o valor na carteira do usuário e registra uma transação do tipo DEPOSIT.",
+      operationId: "deposit",
+      requestBody: requestBody(ref("DepositRequest")),
       responses: {
         201: response(
-          'Depósito realizado.',
+          "Depósito realizado.",
           successBody(walletOperationData, { message: true }),
         ),
         400: ERR.badRequest,
@@ -89,15 +86,15 @@ export const walletsPaths = {
 
   [`${API}/wallets/withdraw`]: {
     post: {
-      tags: ['Wallets'],
-      summary: 'Realiza um saque',
+      tags: ["Wallets"],
+      summary: "Realiza um saque",
       description:
-        'Requer autenticação. Debita o valor disponível (saldo menos reservas ativas). O método aceita PIX ou BANK_TRANSFER e o destino é opcional.',
-      operationId: 'withdraw',
-      requestBody: requestBody(ref('WithdrawRequest')),
+        "Requer autenticação. Debita o valor disponível (saldo menos reservas ativas). O método aceita PIX ou BANK_TRANSFER e o destino é opcional.",
+      operationId: "withdraw",
+      requestBody: requestBody(ref("WithdrawRequest")),
       responses: {
         201: response(
-          'Saque realizado.',
+          "Saque realizado.",
           successBody(walletOperationData, { message: true }),
         ),
         400: ERR.badRequest,
@@ -111,15 +108,15 @@ export const walletsPaths = {
 
   [`${API}/wallets/admin/all`]: {
     get: {
-      tags: ['Wallets'],
-      summary: 'Lista todas as carteiras',
+      tags: ["Wallets"],
+      summary: "Lista todas as carteiras",
       description:
-        'Requer perfil ADMIN. Lista paginada de carteiras com usuário, valor reservado, disponível e contagem de transações.',
-      operationId: 'listAllWallets',
-      'x-required-roles': ['ADMIN'],
-      parameters: [paramRef('PageParam'), paramRef('LimitParam')],
+        "Requer perfil ADMIN. Lista paginada de carteiras com usuário, valor reservado, disponível e contagem de transações.",
+      operationId: "listAllWallets",
+      "x-required-roles": ["ADMIN"],
+      parameters: [paramRef("PageParam"), paramRef("LimitParam")],
       responses: {
-        200: response('Lista de carteiras.', paginated('Wallet')),
+        200: response("Lista de carteiras.", paginated("Wallet")),
         400: ERR.badRequest,
         401: ERR.unauthorized,
         403: ERR.forbidden,
@@ -131,15 +128,15 @@ export const walletsPaths = {
 
   [`${API}/wallets/admin/{userId}`]: {
     get: {
-      tags: ['Wallets'],
-      summary: 'Retorna a carteira de um usuário',
+      tags: ["Wallets"],
+      summary: "Retorna a carteira de um usuário",
       description:
-        'Requer perfil ADMIN. Retorna a carteira do usuário, reservas ativas com lote e as 20 transações mais recentes.',
-      operationId: 'getWalletByUserId',
-      'x-required-roles': ['ADMIN'],
-      parameters: [paramRef('UserIdParam')],
+        "Requer perfil ADMIN. Retorna a carteira do usuário, reservas ativas com lote e as 20 transações mais recentes.",
+      operationId: "getWalletByUserId",
+      "x-required-roles": ["ADMIN"],
+      parameters: [paramRef("UserIdParam")],
       responses: {
-        200: response('Carteira do usuário.', successBody(ref('Wallet'))),
+        200: response("Carteira do usuário.", successBody(ref("Wallet"))),
         401: ERR.unauthorized,
         403: ERR.forbidden,
         404: ERR.notFound,

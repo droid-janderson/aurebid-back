@@ -6,7 +6,7 @@ export type TransactionClient = Prisma.TransactionClient;
 
 export interface BidHashInput {
   previousHash: string | null;
-  lotId: string;
+  batchId: string;
   bidId: string;
   amount: string;
   createdAt: Date;
@@ -22,7 +22,7 @@ export function normalizeAmount(
 export function computeBidHash(input: BidHashInput): string {
   const payload = [
     input.previousHash ?? "",
-    input.lotId,
+    input.batchId,
     input.bidId,
     input.amount,
     input.createdAt.toISOString(),
@@ -35,13 +35,13 @@ export async function appendBidAudit(
   tx: TransactionClient,
   bid: {
     id: string;
-    lotId: string;
+    batchId: string;
     amount: Prisma.Decimal | string | number;
     createdAt: Date;
   },
 ) {
   const lastEntry = await tx.bidAudit.findFirst({
-    where: { lotId: bid.lotId },
+    where: { batchId: bid.batchId },
     orderBy: { sequence: "desc" },
   });
 
@@ -51,7 +51,7 @@ export async function appendBidAudit(
 
   const currentHash = computeBidHash({
     previousHash,
-    lotId: bid.lotId,
+    batchId: bid.batchId,
     bidId: bid.id,
     amount,
     createdAt: bid.createdAt,
@@ -60,7 +60,7 @@ export async function appendBidAudit(
   return tx.bidAudit.create({
     data: {
       bidId: bid.id,
-      lotId: bid.lotId,
+      batchId: bid.batchId,
       sequence,
       previousHash,
       currentHash,
@@ -77,10 +77,10 @@ export interface AuditChainVerification {
 }
 
 export async function verifyBidAuditChain(
-  lotId: string,
+  batchId: string,
 ): Promise<AuditChainVerification> {
   const entries = await prisma.bidAudit.findMany({
-    where: { lotId },
+    where: { batchId },
     orderBy: { sequence: "asc" },
     include: { bid: true },
   });
@@ -111,7 +111,7 @@ export async function verifyBidAuditChain(
 
     const expectedHash = computeBidHash({
       previousHash,
-      lotId,
+      batchId,
       bidId: entry.bidId,
       amount: entry.bid ? normalizeAmount(entry.bid.amount) : "",
       createdAt: entry.createdAt,

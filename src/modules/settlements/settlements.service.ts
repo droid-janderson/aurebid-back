@@ -11,20 +11,20 @@ import {
 type Tx = Prisma.TransactionClient;
 
 export function buildReceiptNumber(
-  lotId: string,
+  batchId: string,
   reference: Date = new Date(),
 ): string {
-  return `REC-${reference.getFullYear()}-${lotId.slice(-8).toUpperCase()}`;
+  return `REC-${reference.getFullYear()}-${batchId.slice(-8).toUpperCase()}`;
 }
 
-export async function releaseLotReservations(
+export async function releaseBatchReservations(
   tx: Tx,
-  lotId: string,
+  batchId: string,
   keepWalletId?: string,
 ): Promise<number> {
   const result = await tx.walletReservation.updateMany({
     where: {
-      lotId,
+      batchId,
       status: "ACTIVE",
       ...(keepWalletId ? { walletId: { not: keepWalletId } } : {}),
     },
@@ -34,10 +34,10 @@ export async function releaseLotReservations(
   return result.count;
 }
 
-export async function createSettlementForLot(lotId: string) {
+export async function createSettlementForBatch(batchId: string) {
   return prisma.$transaction(async (tx) => {
-    const lot = await tx.lot.findUnique({
-      where: { id: lotId },
+    const batch = await tx.batch.findUnique({
+      where: { id: batchId },
       include: {
         bids: {
           orderBy: { amount: "desc" },
@@ -48,50 +48,50 @@ export async function createSettlementForLot(lotId: string) {
       },
     });
 
-    if (!lot) {
-      throw new NotFoundError("Lot");
+    if (!batch) {
+      throw new NotFoundError("Batch");
     }
 
-    if (lot.settlement) {
-      return lot.settlement;
+    if (batch.settlement) {
+      return batch.settlement;
     }
 
-    if (!["ACTIVE", "ENDED"].includes(lot.status)) {
+    if (!["ACTIVE", "ENDED"].includes(batch.status)) {
       throw new SettlementError(
-        "Lot is not ready to be settled",
-        "LOT_NOT_SETTLEABLE",
+        "Batch is not ready to be settled",
+        "BATCH_NOT_SETTLEABLE",
       );
     }
 
-    const winningBid = lot.bids[0];
+    const winningBid = batch.bids[0];
 
     if (!winningBid) {
-      await tx.lot.update({
-        where: { id: lot.id },
+      await tx.batch.update({
+        where: { id: batch.id },
         data: { status: "ENDED" },
       });
-      await releaseLotReservations(tx, lot.id);
+      await releaseBatchReservations(tx, batch.id);
       return null;
     }
 
-    await tx.lot.update({
-      where: { id: lot.id },
+    await tx.batch.update({
+      where: { id: batch.id },
       data: { status: "ENDED" },
     });
 
     const winnerWallet = await tx.wallet.findUnique({
       where: { userId: winningBid.bidderId },
     });
-    await releaseLotReservations(tx, lot.id, winnerWallet?.id);
+    await releaseBatchReservations(tx, batch.id, winnerWallet?.id);
 
-    const receiptNumber = buildReceiptNumber(lot.id);
+    const receiptNumber = buildReceiptNumber(batch.id);
 
     const settlement = await tx.settlement.create({
       data: {
-        lotId: lot.id,
+        batchId: batch.id,
         winningBidId: winningBid.id,
         buyerId: winningBid.bidderId,
-        sellerId: lot.sellerId,
+        sellerId: batch.sellerId,
         amount: winningBid.amount,
         receiptNumber,
         status: "PENDING",
@@ -144,15 +144,18 @@ export async function completeSettlement(settlementId: string) {
   return prisma.$transaction(async (tx) => {
     const settlement = await tx.settlement.findUnique({
       where: { id: settlementId },
-      include: { lot: true, winningBid: true },
+      include: { batch: true, winningBid: true },
     });
 
     if (!settlement) {
       throw new NotFoundError("Settlement");
     }
 
-    if (!["ENDED", "SETTLED"].includes(settlement.lot.status)) {
-      throw new SettlementError("Lot is not finished yet", "LOT_NOT_FINISHED");
+    if (!["ENDED", "SETTLED"].includes(settlement.batch.status)) {
+      throw new SettlementError(
+        "Batch is not finished yet",
+        "BATCH_NOT_FINISHED",
+      );
     }
 
     const amount = formatDecimal(settlement.amount);
@@ -224,14 +227,14 @@ export async function completeSettlement(settlementId: string) {
     await tx.walletReservation.updateMany({
       where: {
         walletId: buyerWallet.id,
-        lotId: settlement.lotId,
+        batchId: settlement.batchId,
         status: "ACTIVE",
       },
       data: { status: "CONSUMED" },
     });
 
-    await tx.lot.update({
-      where: { id: settlement.lotId },
+    await tx.batch.update({
+      where: { id: settlement.batchId },
       data: { status: "SETTLED" },
     });
 
@@ -242,7 +245,7 @@ export async function completeSettlement(settlementId: string) {
         completedAt: new Date(),
       },
       include: {
-        lot: true,
+        batch: true,
         buyer: { select: { id: true, name: true, email: true } },
       },
     });
@@ -264,7 +267,7 @@ export async function failSettlement(settlementId: string) {
     }
 
     await tx.walletReservation.updateMany({
-      where: { lotId: settlement.lotId, status: "ACTIVE" },
+      where: { batchId: settlement.batchId, status: "ACTIVE" },
       data: { status: "RELEASED" },
     });
 

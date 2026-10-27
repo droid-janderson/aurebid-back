@@ -137,7 +137,7 @@ export function validateBidAmount(
   return { valid: true, minimumNextBid };
 }
 
-export function getLotTiming(
+export function getBatchTiming(
   startsAt: Date,
   endsAt: Date,
 ): {

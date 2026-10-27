@@ -1,12 +1,16 @@
-import { Response } from 'express';
-import { prisma } from '../../config/database';
-import { asyncHandler } from '../../shared/middlewares';
-import { NotFoundError, AuthorizationError } from '../../shared/errors';
-import { RequestWithUser } from '../../shared/types';
-import { parsePaginationParams, buildPaginatedResponse, formatDecimal } from '../../shared/utils';
+import { Response } from "express";
+import { prisma } from "../../config/database";
+import { asyncHandler } from "../../shared/middlewares";
+import { NotFoundError, AuthorizationError } from "../../shared/errors";
+import { RequestWithUser } from "../../shared/types";
+import {
+  parsePaginationParams,
+  buildPaginatedResponse,
+  formatDecimal,
+} from "../../shared/utils";
 
 const bidInclude = {
-  lot: {
+  batch: {
     select: {
       id: true,
       title: true,
@@ -20,89 +24,110 @@ const bidInclude = {
     },
   },
   bidder: { select: { id: true, name: true, email: true } },
-  audit: { select: { sequence: true, currentHash: true, previousHash: true, createdAt: true } },
+  audit: {
+    select: {
+      sequence: true,
+      currentHash: true,
+      previousHash: true,
+      createdAt: true,
+    },
+  },
 } as const;
 
 function serializeBid(bid: any) {
   return { ...bid, amount: formatDecimal(bid.amount) };
 }
 
-export const listMyBids = asyncHandler(async (req: RequestWithUser, res: Response) => {
-  const user = req.user!;
-  const { page = 1, limit = 20, lotId } = req.query;
+export const listMyBids = asyncHandler(
+  async (req: RequestWithUser, res: Response) => {
+    const user = req.user!;
+    const { page = 1, limit = 20, batchId } = req.query;
 
-  const { page: pageNum, limit: limitNum, skip } = parsePaginationParams(page, limit);
-
-  const where: any = { bidderId: user.id };
-  if (lotId) where.lotId = lotId;
-
-  const [bids, total] = await Promise.all([
-    prisma.bid.findMany({
-      where,
+    const {
+      page: pageNum,
+      limit: limitNum,
       skip,
-      take: limitNum,
-      orderBy: { createdAt: 'desc' },
+    } = parsePaginationParams(page, limit);
+
+    const where: any = { bidderId: user.id };
+    if (batchId) where.batchId = batchId;
+
+    const [bids, total] = await Promise.all([
+      prisma.bid.findMany({
+        where,
+        skip,
+        take: limitNum,
+        orderBy: { createdAt: "desc" },
+        include: bidInclude,
+      }),
+      prisma.bid.count({ where }),
+    ]);
+
+    res.json({
+      success: true,
+      data: bids.map(serializeBid),
+      meta: buildPaginatedResponse(bids, total, pageNum, limitNum).meta,
+    });
+  },
+);
+
+export const getBidById = asyncHandler(
+  async (req: RequestWithUser, res: Response) => {
+    const user = req.user!;
+    const { id } = req.params;
+
+    const bid = await prisma.bid.findUnique({
+      where: { id },
       include: bidInclude,
-    }),
-    prisma.bid.count({ where }),
-  ]);
+    });
 
-  res.json({
-    success: true,
-    data: bids.map(serializeBid),
-    meta: buildPaginatedResponse(bids, total, pageNum, limitNum).meta,
-  });
-});
+    if (!bid) {
+      throw new NotFoundError("Bid");
+    }
 
-export const getBidById = asyncHandler(async (req: RequestWithUser, res: Response) => {
-  const user = req.user!;
-  const { id } = req.params;
+    const isOwner = bid.bidderId === user.id;
+    const isBatchSeller = bid.batch.seller.id === user.id;
 
-  const bid = await prisma.bid.findUnique({
-    where: { id },
-    include: bidInclude,
-  });
+    if (user.role !== "ADMIN" && !isOwner && !isBatchSeller) {
+      throw new AuthorizationError("Access denied");
+    }
 
-  if (!bid) {
-    throw new NotFoundError('Bid');
-  }
+    res.json({
+      success: true,
+      data: serializeBid(bid),
+    });
+  },
+);
 
-  const isOwner = bid.bidderId === user.id;
-  const isLotSeller = bid.lot.seller.id === user.id;
+export const listAllBids = asyncHandler(
+  async (req: RequestWithUser, res: Response) => {
+    const { page = 1, limit = 20, batchId, bidderId } = req.query;
 
-  if (user.role !== 'ADMIN' && !isOwner && !isLotSeller) {
-    throw new AuthorizationError('Access denied');
-  }
-
-  res.json({
-    success: true,
-    data: serializeBid(bid),
-  });
-});
-
-export const listAllBids = asyncHandler(async (req: RequestWithUser, res: Response) => {
-  const { page = 1, limit = 20, lotId, bidderId } = req.query;
-
-  const { page: pageNum, limit: limitNum, skip } = parsePaginationParams(page, limit);
-
-  const where: any = {};
-  if (lotId) where.lotId = lotId;
-  if (bidderId) where.bidderId = bidderId;
-
-  const [bids, total] = await Promise.all([
-    prisma.bid.findMany({
-      where,
+    const {
+      page: pageNum,
+      limit: limitNum,
       skip,
-      take: limitNum,
-      orderBy: { createdAt: 'desc' },
-      include: bidInclude,
-    }),
-    prisma.bid.count({ where }),
-  ]);
+    } = parsePaginationParams(page, limit);
 
-  res.json({
-    success: true,
-    data: bids.map(serializeBid),
-    meta: buildPaginatedResponse(bids, total, pageNum, limitNum).meta,
-  });
-});
+    const where: any = {};
+    if (batchId) where.batchId = batchId;
+    if (bidderId) where.bidderId = bidderId;
+
+    const [bids, total] = await Promise.all([
+      prisma.bid.findMany({
+        where,
+        skip,
+        take: limitNum,
+        orderBy: { createdAt: "desc" },
+        include: bidInclude,
+      }),
+      prisma.bid.count({ where }),
+    ]);
+
+    res.json({
+      success: true,
+      data: bids.map(serializeBid),
+      meta: buildPaginatedResponse(bids, total, pageNum, limitNum).meta,
+    });
+  },
+);

@@ -11,7 +11,7 @@ import {
 
 const API = env.apiPrefix;
 
-const lotListParams = [
+const batchListParams = [
   paramRef("PageParam"),
   paramRef("LimitParam"),
   paramRef("StatusFilterParam"),
@@ -20,7 +20,7 @@ const lotListParams = [
   paramRef("SearchParam"),
   paramRef("MinPriceParam"),
   paramRef("MaxPriceParam"),
-  paramRef("LotSortByParam"),
+  paramRef("BatchSortByParam"),
   paramRef("SortOrderParam"),
 ];
 
@@ -32,17 +32,17 @@ const protectedErrors = {
 };
 
 export const catalogPaths = {
-  [`${API}/catalog/lots`]: {
+  [`${API}/catalog/batchs`]: {
     get: {
       tags: ["Catalog"],
       summary: "Lista os lotes públicos",
       description:
         "Rota pública. Por padrão exclui lotes DRAFT e CANCELLED. Aceita filtros, busca, faixa de preço e ordenação.",
-      operationId: "listLots",
+      operationId: "listBatchs",
       security: [],
-      parameters: lotListParams,
+      parameters: batchListParams,
       responses: {
-        200: response("Lista de lotes.", paginated("Lot")),
+        200: response("Lista de lotes.", paginated("Batch")),
         400: ERR.badRequest,
         429: ERR.tooManyRequests,
         500: ERR.internalServerError,
@@ -53,13 +53,13 @@ export const catalogPaths = {
       summary: "Cria um lote",
       description:
         "Requer perfil AUCTIONEER ou ADMIN. AUCTIONEER só pode criar lotes para si; ADMIN pode informar sellerId. O vendedor não pode ser BIDDER e endsAt deve ser posterior a startsAt.",
-      operationId: "createLot",
+      operationId: "createBatch",
       "x-required-roles": ["AUCTIONEER", "ADMIN"],
-      requestBody: requestBody(ref("CreateLotRequest")),
+      requestBody: requestBody(ref("CreateBatchRequest")),
       responses: {
         201: response(
           "Lote criado.",
-          successBody(ref("Lot"), { message: true }),
+          successBody(ref("Batch"), { message: true }),
         ),
         400: ERR.badRequest,
         401: ERR.unauthorized,
@@ -71,34 +71,34 @@ export const catalogPaths = {
     },
   },
 
-  [`${API}/catalog/lots/mine`]: {
+  [`${API}/catalog/batchs/mine`]: {
     get: {
       tags: ["Catalog"],
       summary: "Lista os lotes do usuário autenticado",
       description:
         "Requer perfil AUCTIONEER ou ADMIN. AUCTIONEER vê apenas seus próprios lotes; ADMIN vê todos. Aceita os mesmos filtros da listagem pública.",
-      operationId: "listMyLots",
+      operationId: "listMyBatchs",
       "x-required-roles": ["AUCTIONEER", "ADMIN"],
-      parameters: lotListParams,
+      parameters: batchListParams,
       responses: {
-        200: response("Lista de lotes do usuário.", paginated("Lot")),
+        200: response("Lista de lotes do usuário.", paginated("Batch")),
         400: ERR.badRequest,
         ...protectedErrors,
       },
     },
   },
 
-  [`${API}/catalog/lots/{id}`]: {
+  [`${API}/catalog/batchs/{id}`]: {
     get: {
       tags: ["Catalog"],
       summary: "Retorna um lote pelo ID",
       description:
         "Rota pública. Retorna detalhes do lote, vendedor, os 10 maiores lances, liquidação e contadores.",
-      operationId: "getLotById",
+      operationId: "getBatchById",
       security: [],
       parameters: [paramRef("IdParam")],
       responses: {
-        200: response("Lote encontrado.", successBody(ref("Lot"))),
+        200: response("Lote encontrado.", successBody(ref("Batch"))),
         404: ERR.notFound,
         429: ERR.tooManyRequests,
         500: ERR.internalServerError,
@@ -109,14 +109,14 @@ export const catalogPaths = {
       summary: "Atualiza um lote",
       description:
         "Requer perfil AUCTIONEER ou ADMIN, com ownership do lote (ADMIN pode editar qualquer lote). Não permite alterar lotes ACTIVE, ENDED, SETTLED ou CANCELLED. Todos os campos são opcionais.",
-      operationId: "updateLot",
+      operationId: "updateBatch",
       "x-required-roles": ["AUCTIONEER", "ADMIN"],
       parameters: [paramRef("IdParam")],
-      requestBody: requestBody(ref("UpdateLotRequest")),
+      requestBody: requestBody(ref("UpdateBatchRequest")),
       responses: {
         200: response(
           "Lote atualizado.",
-          successBody(ref("Lot"), { message: true }),
+          successBody(ref("Batch"), { message: true }),
         ),
         400: ERR.badRequest,
         401: ERR.unauthorized,
@@ -132,7 +132,7 @@ export const catalogPaths = {
       summary: "Remove um lote em rascunho",
       description:
         "Requer perfil AUCTIONEER ou ADMIN, com ownership do lote. Só permite excluir lotes em DRAFT e sem lances, reservas, auditoria ou liquidação.",
-      operationId: "deleteLot",
+      operationId: "deleteBatch",
       "x-required-roles": ["AUCTIONEER", "ADMIN"],
       parameters: [paramRef("IdParam")],
       responses: {

@@ -56,7 +56,7 @@ export const getWallet = asyncHandler(
           where: { status: "ACTIVE" },
           orderBy: { createdAt: "desc" },
           include: {
-            lot: {
+            batch: {
               select: { id: true, title: true, status: true, endsAt: true },
             },
           },
@@ -301,7 +301,9 @@ export const getWalletByUserId = asyncHandler(
         user: { select: { id: true, email: true, name: true, role: true } },
         reservations: {
           where: { status: "ACTIVE" },
-          include: { lot: { select: { id: true, title: true, endsAt: true } } },
+          include: {
+            batch: { select: { id: true, title: true, endsAt: true } },
+          },
         },
         transactions: {
           orderBy: { createdAt: "desc" },

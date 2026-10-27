@@ -1,24 +1,26 @@
-import { z } from 'zod';
+import { z } from "zod";
 
 export const settlementQuerySchema = z.object({
   query: z.object({
     page: z.string().optional(),
     limit: z.string().optional(),
-    status: z.enum(['PENDING', 'PROCESSING', 'COMPLETED', 'FAILED']).optional(),
-    lotId: z.string().min(1, 'Invalid lot ID').optional(),
+    status: z.enum(["PENDING", "PROCESSING", "COMPLETED", "FAILED"]).optional(),
+    batchId: z.string().min(1, "Invalid batch ID").optional(),
   }),
 });
 
 export const settlementIdSchema = z.object({
   params: z.object({
-    id: z.string().min(1, 'Invalid settlement ID'),
+    id: z.string().min(1, "Invalid settlement ID"),
   }),
 });
 
-export const lotIdSchema = z.object({
+export const batchIdSchema = z.object({
   params: z.object({
-    lotId: z.string().min(1, 'Invalid lot ID'),
+    batchId: z.string().min(1, "Invalid batch ID"),
   }),
 });
 
-export type SettlementQueryInput = z.infer<typeof settlementQuerySchema>['query'];
+export type SettlementQueryInput = z.infer<
+  typeof settlementQuerySchema
+>["query"];

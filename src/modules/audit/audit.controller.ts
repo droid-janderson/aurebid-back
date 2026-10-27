@@ -1,10 +1,14 @@
-import { Response } from 'express';
-import { prisma } from '../../config/database';
-import { asyncHandler } from '../../shared/middlewares';
-import { NotFoundError } from '../../shared/errors';
-import { RequestWithUser } from '../../shared/types';
-import { parsePaginationParams, buildPaginatedResponse, formatDecimal } from '../../shared/utils';
-import { verifyBidAuditChain } from '../../shared/utils/audit';
+import { Response } from "express";
+import { prisma } from "../../config/database";
+import { asyncHandler } from "../../shared/middlewares";
+import { NotFoundError } from "../../shared/errors";
+import { RequestWithUser } from "../../shared/types";
+import {
+  parsePaginationParams,
+  buildPaginatedResponse,
+  formatDecimal,
+} from "../../shared/utils";
+import { verifyBidAuditChain } from "../../shared/utils/audit";
 
 const auditInclude = {
   bid: {
@@ -15,105 +19,129 @@ const auditInclude = {
       bidder: { select: { id: true, name: true, email: true } },
     },
   },
-  lot: { select: { id: true, title: true, status: true } },
+  batch: { select: { id: true, title: true, status: true } },
 } as const;
 
 function serializeEntry(entry: any) {
   return {
     ...entry,
-    bid: entry.bid ? { ...entry.bid, amount: formatDecimal(entry.bid.amount) } : null,
+    bid: entry.bid
+      ? { ...entry.bid, amount: formatDecimal(entry.bid.amount) }
+      : null,
   };
 }
 
-export const listAuditEntries = asyncHandler(async (req: RequestWithUser, res: Response) => {
-  const { page = 1, limit = 50, lotId, bidderId } = req.query;
+export const listAuditEntries = asyncHandler(
+  async (req: RequestWithUser, res: Response) => {
+    const { page = 1, limit = 50, batchId, bidderId } = req.query;
 
-  const { page: pageNum, limit: limitNum, skip } = parsePaginationParams(page, limit);
-
-  const where: any = {};
-  if (lotId) where.lotId = lotId;
-  if (bidderId) where.bid = { bidderId };
-
-  const [entries, total] = await Promise.all([
-    prisma.bidAudit.findMany({
-      where,
+    const {
+      page: pageNum,
+      limit: limitNum,
       skip,
-      take: limitNum,
-      orderBy: { createdAt: 'desc' },
-      include: auditInclude,
-    }),
-    prisma.bidAudit.count({ where }),
-  ]);
+    } = parsePaginationParams(page, limit);
 
-  res.json({
-    success: true,
-    data: entries.map(serializeEntry),
-    meta: buildPaginatedResponse(entries, total, pageNum, limitNum).meta,
-  });
-});
+    const where: any = {};
+    if (batchId) where.batchId = batchId;
+    if (bidderId) where.bid = { bidderId };
 
-export const listAuditByLot = asyncHandler(async (req: RequestWithUser, res: Response) => {
-  const { lotId } = req.params;
-  const { page = 1, limit = 100 } = req.query;
+    const [entries, total] = await Promise.all([
+      prisma.bidAudit.findMany({
+        where,
+        skip,
+        take: limitNum,
+        orderBy: { createdAt: "desc" },
+        include: auditInclude,
+      }),
+      prisma.bidAudit.count({ where }),
+    ]);
 
-  const { page: pageNum, limit: limitNum, skip } = parsePaginationParams(page, limit);
+    res.json({
+      success: true,
+      data: entries.map(serializeEntry),
+      meta: buildPaginatedResponse(entries, total, pageNum, limitNum).meta,
+    });
+  },
+);
 
-  const lot = await prisma.lot.findUnique({ where: { id: lotId }, select: { id: true } });
-  if (!lot) {
-    throw new NotFoundError('Lot');
-  }
+export const listAuditByBatch = asyncHandler(
+  async (req: RequestWithUser, res: Response) => {
+    const { batchId } = req.params;
+    const { page = 1, limit = 100 } = req.query;
 
-  const [entries, total] = await Promise.all([
-    prisma.bidAudit.findMany({
-      where: { lotId },
+    const {
+      page: pageNum,
+      limit: limitNum,
       skip,
-      take: limitNum,
-      orderBy: { sequence: 'asc' },
+    } = parsePaginationParams(page, limit);
+
+    const batch = await prisma.batch.findUnique({
+      where: { id: batchId },
+      select: { id: true },
+    });
+    if (!batch) {
+      throw new NotFoundError("Batch");
+    }
+
+    const [entries, total] = await Promise.all([
+      prisma.bidAudit.findMany({
+        where: { batchId },
+        skip,
+        take: limitNum,
+        orderBy: { sequence: "asc" },
+        include: auditInclude,
+      }),
+      prisma.bidAudit.count({ where: { batchId } }),
+    ]);
+
+    res.json({
+      success: true,
+      data: entries.map(serializeEntry),
+      meta: buildPaginatedResponse(entries, total, pageNum, limitNum).meta,
+    });
+  },
+);
+
+export const getAuditEntryByBid = asyncHandler(
+  async (req: RequestWithUser, res: Response) => {
+    const { bidId } = req.params;
+
+    const entry = await prisma.bidAudit.findUnique({
+      where: { bidId },
       include: auditInclude,
-    }),
-    prisma.bidAudit.count({ where: { lotId } }),
-  ]);
+    });
 
-  res.json({
-    success: true,
-    data: entries.map(serializeEntry),
-    meta: buildPaginatedResponse(entries, total, pageNum, limitNum).meta,
-  });
-});
+    if (!entry) {
+      throw new NotFoundError("Audit entry");
+    }
 
-export const getAuditEntryByBid = asyncHandler(async (req: RequestWithUser, res: Response) => {
-  const { bidId } = req.params;
+    res.json({
+      success: true,
+      data: serializeEntry(entry),
+    });
+  },
+);
 
-  const entry = await prisma.bidAudit.findUnique({
-    where: { bidId },
-    include: auditInclude,
-  });
+export const verifyBatchChain = asyncHandler(
+  async (req: RequestWithUser, res: Response) => {
+    const { batchId } = req.params;
 
-  if (!entry) {
-    throw new NotFoundError('Audit entry');
-  }
+    const batch = await prisma.batch.findUnique({
+      where: { id: batchId },
+      select: { id: true },
+    });
+    if (!batch) {
+      throw new NotFoundError("Batch");
+    }
 
-  res.json({
-    success: true,
-    data: serializeEntry(entry),
-  });
-});
+    const verification = await verifyBidAuditChain(batchId);
 
-export const verifyLotChain = asyncHandler(async (req: RequestWithUser, res: Response) => {
-  const { lotId } = req.params;
-
-  const lot = await prisma.lot.findUnique({ where: { id: lotId }, select: { id: true } });
-  if (!lot) {
-    throw new NotFoundError('Lot');
-  }
-
-  const verification = await verifyBidAuditChain(lotId);
-
-  res.json({
-    success: true,
-    data: {
-      lotId,
-      ...verification,
-    },
-  });
-});
+    res.json({
+      success: true,
+      data: {
+        batchId,
+        ...verification,
+      },
+    });
+  },
+);

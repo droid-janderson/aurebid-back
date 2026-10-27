@@ -1,4 +1,4 @@
-import { env } from '../../config/env';
+import { env } from "../../config/env";
 import {
   ERR,
   paginated,
@@ -7,27 +7,30 @@ import {
   requestBody,
   response,
   successBody,
-} from './helpers';
+} from "./helpers";
 
 const API = env.apiPrefix;
 
 const authTokens = {
-  type: 'object',
+  type: "object",
   properties: {
-    accessToken: { type: 'string', description: 'Token JWT de acesso (15m por padrão).' },
+    accessToken: {
+      type: "string",
+      description: "Token JWT de acesso (15m por padrão).",
+    },
     refreshToken: {
-      type: 'string',
-      description: 'Token JWT de renovação (7 dias por padrão).',
+      type: "string",
+      description: "Token JWT de renovação (7 dias por padrão).",
     },
   },
 };
 
 const loginData = {
-  type: 'object',
+  type: "object",
   properties: {
-    user: { $ref: '#/components/schemas/User' },
-    accessToken: { type: 'string' },
-    refreshToken: { type: 'string' },
+    user: { $ref: "#/components/schemas/User" },
+    accessToken: { type: "string" },
+    refreshToken: { type: "string" },
   },
 };
 
@@ -42,21 +45,21 @@ const adminErrors = {
 export const authPaths = {
   [`${API}/auth/register`]: {
     post: {
-      tags: ['Auth'],
-      summary: 'Registra um novo usuário',
+      tags: ["Auth"],
+      summary: "Registra um novo usuário",
       description:
-        'Rota pública. Cria o usuário, uma carteira com saldo zero e retorna o par de tokens. Perfis permitidos: AUCTIONEER ou BIDDER (padrão BIDDER).',
-      operationId: 'register',
+        "Rota pública. Cria o usuário, uma carteira com saldo zero e retorna o par de tokens. Perfis permitidos: AUCTIONEER ou BIDDER (padrão BIDDER).",
+      operationId: "register",
       security: [],
-      requestBody: requestBody(ref('RegisterRequest')),
+      requestBody: requestBody(ref("RegisterRequest")),
       responses: {
         201: response(
-          'Usuário registrado com sucesso.',
+          "Usuário registrado com sucesso.",
           successBody(
             {
-              type: 'object',
+              type: "object",
               properties: {
-                user: { $ref: '#/components/schemas/User' },
+                user: { $ref: "#/components/schemas/User" },
                 ...authTokens.properties,
               },
             },
@@ -73,15 +76,16 @@ export const authPaths = {
 
   [`${API}/auth/login`]: {
     post: {
-      tags: ['Auth'],
-      summary: 'Autentica um usuário',
-      description: 'Rota pública. Valida e-mail e senha e retorna access e refresh tokens.',
-      operationId: 'login',
+      tags: ["Auth"],
+      summary: "Autentica um usuário",
+      description:
+        "Rota pública. Valida e-mail e senha e retorna access e refresh tokens.",
+      operationId: "login",
       security: [],
-      requestBody: requestBody(ref('LoginRequest')),
+      requestBody: requestBody(ref("LoginRequest")),
       responses: {
         200: response(
-          'Login realizado com sucesso.',
+          "Login realizado com sucesso.",
           successBody(loginData, { message: true }),
         ),
         400: ERR.badRequest,
@@ -94,16 +98,16 @@ export const authPaths = {
 
   [`${API}/auth/refresh`]: {
     post: {
-      tags: ['Auth'],
-      summary: 'Renova o access token',
+      tags: ["Auth"],
+      summary: "Renova o access token",
       description:
-        'Rota pública. Recebe o refresh token no corpo e devolve um novo par de tokens.',
-      operationId: 'refreshToken',
+        "Rota pública. Recebe o refresh token no corpo e devolve um novo par de tokens.",
+      operationId: "refreshToken",
       security: [],
-      requestBody: requestBody(ref('RefreshTokenRequest')),
+      requestBody: requestBody(ref("RefreshTokenRequest")),
       responses: {
         200: response(
-          'Tokens renovados.',
+          "Tokens renovados.",
           successBody(authTokens, { message: true }),
         ),
         400: ERR.badRequest,
@@ -116,14 +120,14 @@ export const authPaths = {
 
   [`${API}/auth/logout`]: {
     post: {
-      tags: ['Auth'],
-      summary: 'Encerra a sessão',
+      tags: ["Auth"],
+      summary: "Encerra a sessão",
       description:
-        'Requer autenticação. Como os tokens são stateless, o cliente deve descartá-los.',
-      operationId: 'logout',
+        "Requer autenticação. Como os tokens são stateless, o cliente deve descartá-los.",
+      operationId: "logout",
       responses: {
         200: response(
-          'Logout realizado.',
+          "Logout realizado.",
           successBody(undefined, { message: true }),
         ),
         401: ERR.unauthorized,
@@ -135,14 +139,15 @@ export const authPaths = {
 
   [`${API}/auth/me`]: {
     get: {
-      tags: ['Auth'],
-      summary: 'Retorna o usuário autenticado',
-      description: 'Requer autenticação. Retorna os dados públicos do usuário e sua carteira.',
-      operationId: 'getMe',
+      tags: ["Auth"],
+      summary: "Retorna o usuário autenticado",
+      description:
+        "Requer autenticação. Retorna os dados públicos do usuário e sua carteira.",
+      operationId: "getMe",
       responses: {
         200: response(
-          'Dados do usuário autenticado.',
-          successBody(ref('User')),
+          "Dados do usuário autenticado.",
+          successBody(ref("User")),
         ),
         401: ERR.unauthorized,
         404: ERR.notFound,
@@ -151,15 +156,16 @@ export const authPaths = {
       },
     },
     put: {
-      tags: ['Auth'],
-      summary: 'Atualiza o perfil do usuário autenticado',
-      description: 'Requer autenticação. Atualmente permite alterar apenas o nome.',
-      operationId: 'updateProfile',
-      requestBody: requestBody(ref('UpdateProfileRequest')),
+      tags: ["Auth"],
+      summary: "Atualiza o perfil do usuário autenticado",
+      description:
+        "Requer autenticação. Atualmente permite alterar apenas o nome.",
+      operationId: "updateProfile",
+      requestBody: requestBody(ref("UpdateProfileRequest")),
       responses: {
         200: response(
-          'Perfil atualizado.',
-          successBody(ref('User'), { message: true }),
+          "Perfil atualizado.",
+          successBody(ref("User"), { message: true }),
         ),
         400: ERR.badRequest,
         401: ERR.unauthorized,
@@ -171,15 +177,15 @@ export const authPaths = {
 
   [`${API}/auth/change-password`]: {
     post: {
-      tags: ['Auth'],
-      summary: 'Altera a senha do usuário autenticado',
+      tags: ["Auth"],
+      summary: "Altera a senha do usuário autenticado",
       description:
-        'Requer autenticação. Valida a senha atual e exige a nova senha com no mínimo 8 caracteres.',
-      operationId: 'changePassword',
-      requestBody: requestBody(ref('ChangePasswordRequest')),
+        "Requer autenticação. Valida a senha atual e exige a nova senha com no mínimo 8 caracteres.",
+      operationId: "changePassword",
+      requestBody: requestBody(ref("ChangePasswordRequest")),
       responses: {
         200: response(
-          'Senha alterada.',
+          "Senha alterada.",
           successBody(undefined, { message: true }),
         ),
         400: ERR.badRequest,
@@ -192,19 +198,20 @@ export const authPaths = {
 
   [`${API}/auth/users`]: {
     get: {
-      tags: ['Auth'],
-      summary: 'Lista usuários',
-      description: 'Requer perfil ADMIN. Lista paginada com busca por nome/e-mail e filtro por perfil.',
-      operationId: 'listUsers',
-      'x-required-roles': ['ADMIN'],
+      tags: ["Auth"],
+      summary: "Lista usuários",
+      description:
+        "Requer perfil ADMIN. Lista paginada com busca por nome/e-mail e filtro por perfil.",
+      operationId: "listUsers",
+      "x-required-roles": ["ADMIN"],
       parameters: [
-        paramRef('PageParam'),
-        paramRef('LimitParam'),
-        paramRef('SearchParam'),
-        paramRef('RoleFilterParam'),
+        paramRef("PageParam"),
+        paramRef("LimitParam"),
+        paramRef("SearchParam"),
+        paramRef("RoleFilterParam"),
       ],
       responses: {
-        200: response('Lista de usuários.', paginated('User')),
+        200: response("Lista de usuários.", paginated("User")),
         ...adminErrors,
       },
     },
@@ -212,15 +219,15 @@ export const authPaths = {
 
   [`${API}/auth/users/{id}`]: {
     get: {
-      tags: ['Auth'],
-      summary: 'Retorna um usuário pelo ID',
+      tags: ["Auth"],
+      summary: "Retorna um usuário pelo ID",
       description:
-        'Requer perfil ADMIN. Retorna dados públicos, carteira com reservas ativas e contadores de relacionamentos.',
-      operationId: 'getUserById',
-      'x-required-roles': ['ADMIN'],
-      parameters: [paramRef('IdParam')],
+        "Requer perfil ADMIN. Retorna dados públicos, carteira com reservas ativas e contadores de relacionamentos.",
+      operationId: "getUserById",
+      "x-required-roles": ["ADMIN"],
+      parameters: [paramRef("IdParam")],
       responses: {
-        200: response('Usuário encontrado.', successBody(ref('User'))),
+        200: response("Usuário encontrado.", successBody(ref("User"))),
         401: ERR.unauthorized,
         403: ERR.forbidden,
         404: ERR.notFound,
@@ -229,16 +236,16 @@ export const authPaths = {
       },
     },
     delete: {
-      tags: ['Auth'],
-      summary: 'Remove um usuário',
+      tags: ["Auth"],
+      summary: "Remove um usuário",
       description:
-        'Requer perfil ADMIN. Só permite remover usuários sem lotes, lances, compras, vendas ou histórico de carteira.',
-      operationId: 'deleteUser',
-      'x-required-roles': ['ADMIN'],
-      parameters: [paramRef('IdParam')],
+        "Requer perfil ADMIN. Só permite remover usuários sem lotes, lances, compras, vendas ou histórico de carteira.",
+      operationId: "deleteUser",
+      "x-required-roles": ["ADMIN"],
+      parameters: [paramRef("IdParam")],
       responses: {
         200: response(
-          'Usuário removido.',
+          "Usuário removido.",
           successBody(undefined, { message: true }),
         ),
         401: ERR.unauthorized,
@@ -253,17 +260,18 @@ export const authPaths = {
 
   [`${API}/auth/users/{id}/role`]: {
     put: {
-      tags: ['Auth'],
-      summary: 'Altera o perfil de um usuário',
-      description: 'Requer perfil ADMIN. Altera o perfil para ADMIN, AUCTIONEER ou BIDDER.',
-      operationId: 'updateUserRole',
-      'x-required-roles': ['ADMIN'],
-      parameters: [paramRef('IdParam')],
-      requestBody: requestBody(ref('UpdateUserRoleRequest')),
+      tags: ["Auth"],
+      summary: "Altera o perfil de um usuário",
+      description:
+        "Requer perfil ADMIN. Altera o perfil para ADMIN, AUCTIONEER ou BIDDER.",
+      operationId: "updateUserRole",
+      "x-required-roles": ["ADMIN"],
+      parameters: [paramRef("IdParam")],
+      requestBody: requestBody(ref("UpdateUserRoleRequest")),
       responses: {
         200: response(
-          'Perfil atualizado.',
-          successBody(ref('User'), { message: true }),
+          "Perfil atualizado.",
+          successBody(ref("User"), { message: true }),
         ),
         ...adminErrors,
         404: ERR.notFound,

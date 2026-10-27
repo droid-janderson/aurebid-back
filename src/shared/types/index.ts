@@ -1,5 +1,5 @@
 import { Request } from "express";
-import { UserRole, LotStatus } from "@prisma/client";
+import { UserRole, BatchStatus } from "@prisma/client";
 
 export interface AuthUser {
   id: string;
@@ -68,17 +68,17 @@ export interface SocketUser {
   role: UserRole;
 }
 
-export interface LotTiming {
+export interface BatchTiming {
   status: "scheduled" | "active" | "ended";
   timeRemaining: number;
   timeUntilStart: number;
 }
 
-export interface LotProductData {
+export interface BatchProductData {
   [key: string]: unknown;
 }
 
-export interface LotSummary {
+export interface BatchSummary {
   id: string;
   title: string;
   description: string | null;
@@ -87,7 +87,7 @@ export interface LotSummary {
   minimumIncrement: number;
   startsAt: Date;
   endsAt: Date;
-  status: LotStatus;
+  status: BatchStatus;
   currentPrice: number;
   bidCount: number;
   uniqueBidders: number;
@@ -95,7 +95,7 @@ export interface LotSummary {
 
 export interface BidWithBidder {
   id: string;
-  lotId: string;
+  batchId: string;
   amount: number;
   createdAt: Date;
   bidder: {

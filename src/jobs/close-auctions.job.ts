@@ -1,12 +1,12 @@
 import { prisma } from "../config/database";
 import { auctionSocket } from "../sockets/auction.socket";
-import { createSettlementForLot } from "../modules/settlements/settlements.service";
+import { createSettlementForBatch } from "../modules/settlements/settlements.service";
 
-export async function startScheduledLots(): Promise<void> {
+export async function startScheduledBatchs(): Promise<void> {
   try {
     const now = new Date();
 
-    const lots = await prisma.lot.findMany({
+    const batchs = await prisma.batch.findMany({
       where: {
         status: "SCHEDULED",
         startsAt: { lte: now },
@@ -15,31 +15,33 @@ export async function startScheduledLots(): Promise<void> {
       select: { id: true },
     });
 
-    if (lots.length === 0) return;
+    if (batchs.length === 0) return;
 
-    const result = await prisma.lot.updateMany({
-      where: { id: { in: lots.map((lot) => lot.id) } },
+    const result = await prisma.batch.updateMany({
+      where: { id: { in: batchs.map((batch) => batch.id) } },
       data: { status: "ACTIVE" },
     });
 
-    for (const lot of lots) {
-      const updated = await prisma.lot.findUnique({ where: { id: lot.id } });
+    for (const batch of batchs) {
+      const updated = await prisma.batch.findUnique({
+        where: { id: batch.id },
+      });
       if (updated) {
         auctionSocket.emitAuctionStatusChange(updated);
       }
     }
 
-    console.log(`✅ Started ${result.count} scheduled lot(s)`);
+    console.log(`✅ Started ${result.count} scheduled batch(s)`);
   } catch (error) {
-    console.error("❌ Error in startScheduledLots job:", error);
+    console.error("❌ Error in startScheduledBatchs job:", error);
   }
 }
 
-export async function closeEndedLots(): Promise<void> {
+export async function closeEndedBatchs(): Promise<void> {
   try {
     const now = new Date();
 
-    const lots = await prisma.lot.findMany({
+    const batchs = await prisma.batch.findMany({
       where: {
         status: "ACTIVE",
         endsAt: { lte: now },
@@ -47,16 +49,16 @@ export async function closeEndedLots(): Promise<void> {
       select: { id: true },
     });
 
-    if (lots.length === 0) return;
+    if (batchs.length === 0) return;
 
-    console.log(`🔍 Closing ${lots.length} expired lot(s)...`);
+    console.log(`🔍 Closing ${batchs.length} expired batch(s)...`);
 
-    for (const lot of lots) {
+    for (const batch of batchs) {
       try {
-        const settlement = await createSettlementForLot(lot.id);
+        const settlement = await createSettlementForBatch(batch.id);
 
-        const updated = await prisma.lot.findUnique({
-          where: { id: lot.id },
+        const updated = await prisma.batch.findUnique({
+          where: { id: batch.id },
           include: {
             bids: {
               orderBy: { amount: "desc" },
@@ -71,39 +73,39 @@ export async function closeEndedLots(): Promise<void> {
         }
 
         console.log(
-          `✅ Lot ${lot.id} ended${settlement ? ` - settlement ${settlement.receiptNumber}` : " - no bids"}`,
+          `✅ Batch ${batch.id} ended${settlement ? ` - settlement ${settlement.receiptNumber}` : " - no bids"}`,
         );
       } catch (error) {
-        console.error(`❌ Failed to close lot ${lot.id}:`, error);
+        console.error(`❌ Failed to close batch ${batch.id}:`, error);
       }
     }
   } catch (error) {
-    console.error("❌ Error in closeEndedLots job:", error);
+    console.error("❌ Error in closeEndedBatchs job:", error);
   }
 }
 
-export async function updateLotTimers(): Promise<void> {
+export async function updateBatchTimers(): Promise<void> {
   try {
     const now = Date.now();
 
-    const lots = await prisma.lot.findMany({
+    const batchs = await prisma.batch.findMany({
       where: { status: "ACTIVE" },
       select: { id: true, endsAt: true },
     });
 
-    for (const lot of lots) {
-      const timeRemaining = Math.max(0, new Date(lot.endsAt).getTime() - now);
-      auctionSocket.emitAuctionTimer(lot.id, timeRemaining);
+    for (const batch of batchs) {
+      const timeRemaining = Math.max(0, new Date(batch.endsAt).getTime() - now);
+      auctionSocket.emitAuctionTimer(batch.id, timeRemaining);
     }
   } catch (error) {
-    console.error("❌ Error in updateLotTimers job:", error);
+    console.error("❌ Error in updateBatchTimers job:", error);
   }
 }
 
 export async function runAuctionJobs(): Promise<void> {
-  await startScheduledLots();
-  await closeEndedLots();
-  await updateLotTimers();
+  await startScheduledBatchs();
+  await closeEndedBatchs();
+  await updateBatchTimers();
 }
 if (require.main === module) {
   runAuctionJobs()

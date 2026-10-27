@@ -5,7 +5,7 @@ import * as settlementsController from "./settlements.controller";
 import {
   settlementQuerySchema,
   settlementIdSchema,
-  lotIdSchema,
+  batchIdSchema,
 } from "./settlements.schemas";
 import {
   authenticate,
@@ -30,10 +30,10 @@ router.get(
   asyncHandler(settlementsController.listAllSettlements),
 );
 router.post(
-  "/admin/lots/:lotId",
+  "/admin/batchs/:batchId",
   authorize(["ADMIN"]),
-  validate(lotIdSchema),
-  asyncHandler(settlementsController.createSettlementForLotHandler),
+  validate(batchIdSchema),
+  asyncHandler(settlementsController.createSettlementForBatchHandler),
 );
 router.post(
   "/admin/:id/complete",

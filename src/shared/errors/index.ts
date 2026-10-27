@@ -100,14 +100,14 @@ export class AuctionError extends AppError {
   }
 }
 
-export class LotError extends AppError {
+export class Loterror extends AppError {
   constructor(
     message: string,
-    code: string = "LOT_ERROR",
+    code: string = "BATCH_ERROR",
     details?: Record<string, unknown>,
   ) {
     super(message, 400, code, details);
-    Object.setPrototypeOf(this, LotError.prototype);
+    Object.setPrototypeOf(this, Loterror.prototype);
   }
 }
 

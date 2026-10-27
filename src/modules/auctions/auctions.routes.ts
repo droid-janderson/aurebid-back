@@ -6,7 +6,7 @@ import {
   auctionQuerySchema,
   placeBidSchema,
   bidQuerySchema,
-  updateLotStatusSchema,
+  updateBatchStatusSchema,
 } from "./auctions.schemas";
 import {
   authenticate,
@@ -64,7 +64,7 @@ router.post(
 router.put(
   "/:id/status",
   authorize(["ADMIN"]),
-  validate(updateLotStatusSchema),
+  validate(updateBatchStatusSchema),
   asyncHandler(auctionController.updateAuctionStatus),
 );
 

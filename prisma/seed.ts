@@ -2,7 +2,7 @@ import { createHash } from "node:crypto";
 import {
   PrismaClient,
   UserRole,
-  LotStatus,
+  BatchStatus,
   ReservationStatus,
   WalletTransactionType,
   SettlementStatus,
@@ -24,7 +24,7 @@ const DEPOSIT_DESCRIPTION = "Saldo inicial (seed)";
 
 interface SeedBidInput {
   id: string;
-  lotId: string;
+  batchId: string;
   bidderId: string;
   amount: string;
   createdAt: Date;
@@ -34,14 +34,14 @@ interface SeedBidInput {
 
 function hashBid(input: {
   previousHash: string | null;
-  lotId: string;
+  batchId: string;
   bidId: string;
   amount: string;
   createdAt: Date;
 }): string {
   const payload = [
     input.previousHash ?? "",
-    input.lotId,
+    input.batchId,
     input.bidId,
     input.amount,
     input.createdAt.toISOString(),
@@ -54,14 +54,14 @@ async function seedBid(input: SeedBidInput): Promise<string> {
   const bid = await prisma.bid.upsert({
     where: { id: input.id },
     update: {
-      lotId: input.lotId,
+      batchId: input.batchId,
       bidderId: input.bidderId,
       amount: input.amount,
       createdAt: input.createdAt,
     },
     create: {
       id: input.id,
-      lotId: input.lotId,
+      batchId: input.batchId,
       bidderId: input.bidderId,
       amount: input.amount,
       createdAt: input.createdAt,
@@ -70,7 +70,7 @@ async function seedBid(input: SeedBidInput): Promise<string> {
 
   const currentHash = hashBid({
     previousHash: input.previousHash,
-    lotId: input.lotId,
+    batchId: input.batchId,
     bidId: bid.id,
     amount: input.amount,
     createdAt: input.createdAt,
@@ -79,7 +79,7 @@ async function seedBid(input: SeedBidInput): Promise<string> {
   await prisma.bidAudit.upsert({
     where: { bidId: bid.id },
     update: {
-      lotId: input.lotId,
+      batchId: input.batchId,
       sequence: input.sequence,
       previousHash: input.previousHash,
       currentHash,
@@ -87,7 +87,7 @@ async function seedBid(input: SeedBidInput): Promise<string> {
     },
     create: {
       bidId: bid.id,
-      lotId: input.lotId,
+      batchId: input.batchId,
       sequence: input.sequence,
       previousHash: input.previousHash,
       currentHash,
@@ -135,7 +135,7 @@ async function seedWallet(input: SeedWalletInput) {
 
 interface SeedReservationInput {
   walletId: string;
-  lotId: string;
+  batchId: string;
   bidId: string;
   amount: string;
   status: ReservationStatus;
@@ -144,9 +144,9 @@ interface SeedReservationInput {
 async function seedReservation(input: SeedReservationInput) {
   return prisma.walletReservation.upsert({
     where: {
-      walletId_lotId: {
+      walletId_batchId: {
         walletId: input.walletId,
-        lotId: input.lotId,
+        batchId: input.batchId,
       },
     },
     update: {
@@ -156,7 +156,7 @@ async function seedReservation(input: SeedReservationInput) {
     },
     create: {
       walletId: input.walletId,
-      lotId: input.lotId,
+      batchId: input.batchId,
       bidId: input.bidId,
       amount: input.amount,
       status: input.status,
@@ -263,8 +263,8 @@ async function main() {
     "wallet(s)",
   );
 
-  const lot001 = await prisma.lot.upsert({
-    where: { id: "lot-001" },
+  const batch001 = await prisma.batch.upsert({
+    where: { id: "batch-001" },
     update: {
       sellerId: auctioneer.id,
       title: "Óleo sobre tela - Paisagem Brasileira",
@@ -285,10 +285,10 @@ async function main() {
       minimumIncrement: "500.00",
       startsAt: daysFromNow(-1),
       endsAt: daysFromNow(1),
-      status: LotStatus.ACTIVE,
+      status: BatchStatus.ACTIVE,
     },
     create: {
-      id: "lot-001",
+      id: "batch-001",
       sellerId: auctioneer.id,
       productSource: "MANUAL",
       externalProductId: "painting-001",
@@ -310,12 +310,12 @@ async function main() {
       minimumIncrement: "500.00",
       startsAt: daysFromNow(-1),
       endsAt: daysFromNow(1),
-      status: LotStatus.ACTIVE,
+      status: BatchStatus.ACTIVE,
     },
   });
 
-  const lot002 = await prisma.lot.upsert({
-    where: { id: "lot-002" },
+  const batch002 = await prisma.batch.upsert({
+    where: { id: "batch-002" },
     update: {
       sellerId: auctioneer.id,
       title: "Rolex Submariner Date 116610LN",
@@ -339,10 +339,10 @@ async function main() {
       minimumIncrement: "1000.00",
       startsAt: daysFromNow(1),
       endsAt: daysFromNow(7),
-      status: LotStatus.SCHEDULED,
+      status: BatchStatus.SCHEDULED,
     },
     create: {
-      id: "lot-002",
+      id: "batch-002",
       sellerId: auctioneer.id,
       productSource: "MANUAL",
       externalProductId: "watch-001",
@@ -367,12 +367,12 @@ async function main() {
       minimumIncrement: "1000.00",
       startsAt: daysFromNow(1),
       endsAt: daysFromNow(7),
-      status: LotStatus.SCHEDULED,
+      status: BatchStatus.SCHEDULED,
     },
   });
 
-  const lot003 = await prisma.lot.upsert({
-    where: { id: "lot-003" },
+  const batch003 = await prisma.batch.upsert({
+    where: { id: "batch-003" },
     update: {
       sellerId: auctioneer.id,
       title: "Ford Mustang 1967 Fastback",
@@ -396,10 +396,10 @@ async function main() {
       minimumIncrement: "5000.00",
       startsAt: daysFromNow(7),
       endsAt: daysFromNow(10),
-      status: LotStatus.DRAFT,
+      status: BatchStatus.DRAFT,
     },
     create: {
-      id: "lot-003",
+      id: "batch-003",
       sellerId: auctioneer.id,
       productSource: "MANUAL",
       externalProductId: "car-001",
@@ -424,12 +424,12 @@ async function main() {
       minimumIncrement: "5000.00",
       startsAt: daysFromNow(7),
       endsAt: daysFromNow(10),
-      status: LotStatus.DRAFT,
+      status: BatchStatus.DRAFT,
     },
   });
 
-  const lot004 = await prisma.lot.upsert({
-    where: { id: "lot-004" },
+  const batch004 = await prisma.batch.upsert({
+    where: { id: "batch-004" },
     update: {
       sellerId: auctioneer.id,
       title: "Escultura em bronze - Figura Feminina",
@@ -448,10 +448,10 @@ async function main() {
       minimumIncrement: "500.00",
       startsAt: daysFromNow(-10),
       endsAt: daysFromNow(-3),
-      status: LotStatus.SETTLED,
+      status: BatchStatus.SETTLED,
     },
     create: {
-      id: "lot-004",
+      id: "batch-004",
       sellerId: auctioneer.id,
       productSource: "MANUAL",
       externalProductId: "sculpture-001",
@@ -471,18 +471,18 @@ async function main() {
       minimumIncrement: "500.00",
       startsAt: daysFromNow(-10),
       endsAt: daysFromNow(-3),
-      status: LotStatus.SETTLED,
+      status: BatchStatus.SETTLED,
     },
   });
 
   console.log(
-    "✅ Lots created:",
-    [lot001, lot002, lot003, lot004].map((l) => l.id).join(", "),
+    "✅ Batchs created:",
+    [batch001, batch002, batch003, batch004].map((l) => l.id).join(", "),
   );
 
-  const lot001Hash1 = await seedBid({
+  const batch001Hash1 = await seedBid({
     id: "bid-001",
-    lotId: lot001.id,
+    batchId: batch001.id,
     bidderId: bidder.id,
     amount: "5500.00",
     createdAt: hoursFromNow(-3),
@@ -490,29 +490,29 @@ async function main() {
     previousHash: null,
   });
 
-  const lot001Hash2 = await seedBid({
+  const batch001Hash2 = await seedBid({
     id: "bid-002",
-    lotId: lot001.id,
+    batchId: batch001.id,
     bidderId: bidder2.id,
     amount: "6000.00",
     createdAt: hoursFromNow(-2),
     sequence: 2,
-    previousHash: lot001Hash1,
+    previousHash: batch001Hash1,
   });
 
-  const lot001Hash3 = await seedBid({
+  const batch001Hash3 = await seedBid({
     id: "bid-003",
-    lotId: lot001.id,
+    batchId: batch001.id,
     bidderId: bidder.id,
     amount: "6500.00",
     createdAt: hoursFromNow(-1),
     sequence: 3,
-    previousHash: lot001Hash2,
+    previousHash: batch001Hash2,
   });
 
-  const lot004Hash1 = await seedBid({
+  const batch004Hash1 = await seedBid({
     id: "bid-004",
-    lotId: lot004.id,
+    batchId: batch004.id,
     bidderId: bidder.id,
     amount: "12000.00",
     createdAt: daysFromNow(-5),
@@ -520,24 +520,24 @@ async function main() {
     previousHash: null,
   });
 
-  const lot004Hash2 = await seedBid({
+  const batch004Hash2 = await seedBid({
     id: "bid-005",
-    lotId: lot004.id,
+    batchId: batch004.id,
     bidderId: bidder2.id,
     amount: "13500.00",
     createdAt: daysFromNow(-4),
     sequence: 2,
-    previousHash: lot004Hash1,
+    previousHash: batch004Hash1,
   });
 
-  void lot001Hash3;
-  void lot004Hash2;
+  void batch001Hash3;
+  void batch004Hash2;
 
   console.log("✅ Bids + bid audit chain created");
 
   await seedReservation({
     walletId: bidderWallet.id,
-    lotId: lot001.id,
+    batchId: batch001.id,
     bidId: "bid-003",
     amount: "6500.00",
     status: ReservationStatus.ACTIVE,
@@ -545,7 +545,7 @@ async function main() {
 
   await seedReservation({
     walletId: bidder2Wallet.id,
-    lotId: lot001.id,
+    batchId: batch001.id,
     bidId: "bid-002",
     amount: "6000.00",
     status: ReservationStatus.ACTIVE,
@@ -553,7 +553,7 @@ async function main() {
 
   await seedReservation({
     walletId: bidderWallet.id,
-    lotId: lot004.id,
+    batchId: batch004.id,
     bidId: "bid-004",
     amount: "12000.00",
     status: ReservationStatus.RELEASED,
@@ -561,7 +561,7 @@ async function main() {
 
   await seedReservation({
     walletId: bidder2Wallet.id,
-    lotId: lot004.id,
+    batchId: batch004.id,
     bidId: "bid-005",
     amount: "13500.00",
     status: ReservationStatus.CONSUMED,
@@ -570,7 +570,7 @@ async function main() {
   console.log("✅ Wallet reservations created");
 
   const settlement = await prisma.settlement.upsert({
-    where: { lotId: lot004.id },
+    where: { batchId: batch004.id },
     update: {
       winningBidId: "bid-005",
       buyerId: bidder2.id,
@@ -581,7 +581,7 @@ async function main() {
       completedAt: daysFromNow(-2),
     },
     create: {
-      lotId: lot004.id,
+      batchId: batch004.id,
       winningBidId: "bid-005",
       buyerId: bidder2.id,
       sellerId: auctioneer.id,
@@ -643,10 +643,10 @@ async function main() {
   console.log("   Licitante:   bidder@aurebid.com      / bidder123");
   console.log("   Licitante 2: bidder2@aurebid.com     / bidder123");
   console.log("\n📦 Seeded data:");
-  console.log("   lot-001  ACTIVE     (3 bids, 2 active reservations)");
-  console.log("   lot-002  SCHEDULED");
-  console.log("   lot-003  DRAFT");
-  console.log("   lot-004  SETTLED    (2 bids, settlement REC-2026-0001)");
+  console.log("   batch-001  ACTIVE     (3 bids, 2 active reservations)");
+  console.log("   batch-002  SCHEDULED");
+  console.log("   batch-003  DRAFT");
+  console.log("   batch-004  SETTLED    (2 bids, settlement REC-2026-0001)");
 }
 
 main()
