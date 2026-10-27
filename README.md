@@ -291,8 +291,6 @@ docker-compose down -v
 | `JWT_REFRESH_SECRET`      | Refresh token secret         | Required              |
 | `JWT_REFRESH_EXPIRES_IN`  | Refresh token expiry         | 7d                    |
 | `CORS_ORIGIN`             | CORS allowed origin          | http://localhost:3001 |
-| `RATE_LIMIT_WINDOW_MS`    | Rate limit window            | 900000                |
-| `RATE_LIMIT_MAX_REQUESTS` | Max requests per window      | 100                   |
 | `SOCKET_IO_CORS_ORIGIN`   | Socket.io allowed origin     | http://localhost:3001 |
 
 ## 📦 Test Credentials (after seeding)

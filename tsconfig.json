@@ -15,7 +15,6 @@
     "declarationMap": true,
     "sourceMap": true,
     "baseUrl": ".",
-    "ignoreDeprecations": "6.0",
     "paths": {
       "@/*": ["src/*"],
       "@config/*": ["src/config/*"],
