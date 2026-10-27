@@ -636,13 +636,13 @@ async function main() {
 
   console.log("✅ Settlement + wallet transactions created");
 
-  console.log("\n🎉 Database seed completed successfully!");
-  console.log("\n📋 Test credentials:");
+  console.log("\n Database seed completed successfully!");
+  console.log("\n Test credentials:");
   console.log("   Admin:       admin@aurebid.com       / admin123");
   console.log("   Leiloeiro:   auctioneer@aurebid.com  / auctioneer123");
   console.log("   Licitante:   bidder@aurebid.com      / bidder123");
   console.log("   Licitante 2: bidder2@aurebid.com     / bidder123");
-  console.log("\n📦 Seeded data:");
+  console.log("\n Seeded data:");
   console.log("   batch-001  ACTIVE     (3 bids, 2 active reservations)");
   console.log("   batch-002  SCHEDULED");
   console.log("   batch-003  DRAFT");
