@@ -36,6 +36,7 @@ model Batch {
   startsAt          DateTime
   endsAt            DateTime
   status            BatchStatus         @default(DRAFT)
+  deletedAt         DateTime?
   createdAt         DateTime            @default(now())
   updatedAt         DateTime            @updatedAt
   seller            User                @relation("BatchSeller", fields: [sellerId], references: [id])
@@ -43,8 +44,11 @@ model Batch {
   auditEntries      BidAudit[]
   settlement        Settlement?
   reservations      WalletReservation[]
+  reservationEvents WalletReservationEvent[]
 
   @@index([status, startsAt, endsAt])
+  @@index([status, deletedAt, endsAt])
+  @@index([deletedAt])
   @@index([sellerId, createdAt])
   @@index([productSource, externalProductId])
 }
@@ -60,6 +64,7 @@ model Bid {
   audit       BidAudit?
   settlement  Settlement?
   reservation WalletReservation?
+  reservationEvents WalletReservationEvent[]
 
   @@index([batchId, createdAt])
   @@index([bidderId, createdAt])
@@ -88,6 +93,7 @@ model Wallet {
   updatedAt    DateTime            @updatedAt
   user         User                @relation(fields: [userId], references: [id])
   reservations WalletReservation[]
+  reservationEvents WalletReservationEvent[]
   transactions WalletTransaction[]
 }
 
@@ -103,10 +109,30 @@ model WalletReservation {
   batch     Batch             @relation(fields: [batchId], references: [id])
   bid       Bid?              @relation(fields: [bidId], references: [id])
   wallet    Wallet            @relation(fields: [walletId], references: [id])
+  events    WalletReservationEvent[]
 
   @@unique([walletId, batchId])
   @@index([walletId, status])
   @@index([batchId, status])
+}
+
+model WalletReservationEvent {
+  id            String               @id @default(cuid())
+  reservationId String
+  walletId      String
+  batchId       String
+  bidId         String?
+  type          ReservationEventType
+  amount        Decimal              @db.Decimal(14, 2)
+  createdAt     DateTime             @default(now())
+  reservation   WalletReservation    @relation(fields: [reservationId], references: [id])
+  wallet        Wallet               @relation(fields: [walletId], references: [id])
+  batch         Batch                @relation(fields: [batchId], references: [id])
+  bid           Bid?                 @relation(fields: [bidId], references: [id])
+
+  @@unique([bidId, type])
+  @@index([batchId, createdAt])
+  @@index([walletId, createdAt])
 }
 
 model WalletTransaction {
@@ -135,6 +161,14 @@ model Settlement {
   publicToken   String              @unique @default(cuid())
   status        SettlementStatus    @default(PENDING)
   completedAt   DateTime?
+
+  batchTitle    String?
+  batchImageUrl String?
+  batchEndsAt   DateTime?
+  buyerLabel    String?
+  sellerLabel   String?
+  failureReason String?
+  attempts      Int                 @default(0)
   createdAt     DateTime            @default(now())
   updatedAt     DateTime            @updatedAt
   batch         Batch               @relation(fields: [batchId], references: [id])
@@ -164,6 +198,13 @@ enum BatchStatus {
 
 enum ReservationStatus {
   ACTIVE
+  RELEASED
+  CONSUMED
+}
+
+enum ReservationEventType {
+  HELD
+  UPDATED
   RELEASED
   CONSUMED
 }
