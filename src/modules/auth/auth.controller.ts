@@ -247,7 +247,6 @@ export const changePassword = asyncHandler(
   },
 );
 
-// Admin routes
 export const listUsers = asyncHandler(
   async (req: RequestWithUser, res: Response) => {
     const { page = 1, limit = 20, search, role } = req.query;

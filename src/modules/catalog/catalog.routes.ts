@@ -11,12 +11,14 @@ import {
 import {
   authenticate,
   authorize,
+  optionalAuth,
 } from "../../shared/middlewares/auth.middleware";
 
 const router = Router();
 
 router.get(
   "/batchs",
+  optionalAuth,
   validate(batchQuerySchema),
   asyncHandler(catalogController.listBatchs),
 );
@@ -29,7 +31,11 @@ router.get(
   asyncHandler(catalogController.listMyBatchs),
 );
 
-router.get("/batchs/:id", asyncHandler(catalogController.getBatchById));
+router.get(
+  "/batchs/:id",
+  optionalAuth,
+  asyncHandler(catalogController.getBatchById),
+);
 
 router.get("/cards", asyncHandler(cardexController.searchCards));
 

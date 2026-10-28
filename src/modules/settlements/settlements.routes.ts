@@ -14,7 +14,6 @@ import {
 
 const router = Router();
 
-// Public
 router.get(
   "/public/:token",
   asyncHandler(settlementsController.getSettlementByToken),
@@ -22,7 +21,6 @@ router.get(
 
 router.use(authenticate);
 
-// Admin
 router.get(
   "/admin/all",
   authorize(["ADMIN"]),
@@ -48,7 +46,6 @@ router.post(
   asyncHandler(settlementsController.failSettlementHandler),
 );
 
-// Protected
 router.get(
   "/",
   validate(settlementQuerySchema),

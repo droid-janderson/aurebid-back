@@ -55,24 +55,38 @@ export function optionalAuth(
     return next();
   }
 
-  const token = authHeader.split(" ")[1];
+  const token = authHeader.slice("Bearer ".length).trim();
+
+  if (!token) {
+    throw new AuthenticationError("Invalid token", { code: "TOKEN_INVALID" });
+  }
 
   try {
     const decoded = jwt.verify(token, env.jwt.secret) as JWTPayload;
 
-    if (decoded.type === "access") {
-      (req as RequestWithUser).user = {
-        id: decoded.sub,
-        email: decoded.email,
-        name: decoded.name || "",
-        role: decoded.role,
-      };
+    if (decoded.type !== "access") {
+      throw new AuthenticationError("Invalid token type", {
+        code: "TOKEN_INVALID",
+      });
     }
-  } catch {
-    throw new Error("Error verifying access.");
-  }
 
-  next();
+    (req as RequestWithUser).user = {
+      id: decoded.sub,
+      email: decoded.email,
+      name: decoded.name || "",
+      role: decoded.role,
+    };
+
+    next();
+  } catch (error) {
+    if (error instanceof AuthenticationError) {
+      throw error;
+    }
+    if (error instanceof jwt.TokenExpiredError) {
+      throw new AuthenticationError("Token expired", { code: "TOKEN_EXPIRED" });
+    }
+    throw new AuthenticationError("Invalid token", { code: "TOKEN_INVALID" });
+  }
 }
 
 export function authorize(allowedRoles: string[]) {

@@ -11,6 +11,7 @@ import {
 import {
   authenticate,
   authorize,
+  optionalAuth,
 } from "../../shared/middlewares/auth.middleware";
 
 const router = Router();
@@ -25,17 +26,23 @@ router.get(
 
 router.get(
   "/",
+  optionalAuth,
   validate(auctionQuerySchema),
   asyncHandler(auctionController.listAuctions),
 );
-router.get("/:id", asyncHandler(auctionController.getAuctionById));
+router.get("/:id", optionalAuth, asyncHandler(auctionController.getAuctionById));
 router.get(
   "/:id/bids",
+  optionalAuth,
   validate(bidQuerySchema),
   asyncHandler(auctionController.getAuctionBids),
 );
-router.get("/:id/audit", asyncHandler(auctionController.getPublicAudit));
-router.get("/:id/audit/verify", asyncHandler(auctionController.verifyPublicAudit));
+router.get("/:id/audit", optionalAuth, asyncHandler(auctionController.getPublicAudit));
+router.get(
+  "/:id/audit/verify",
+  optionalAuth,
+  asyncHandler(auctionController.verifyPublicAudit),
+);
 
 router.use(authenticate);
 
@@ -62,7 +69,6 @@ router.post(
   asyncHandler(auctionController.placeBid),
 );
 
-// Admin
 router.put(
   "/:id/status",
   authorize(["ADMIN"]),

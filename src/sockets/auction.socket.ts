@@ -4,6 +4,7 @@ export const AuctionEvents = {
   NEW_BID: "bid:new",
   STATUS_CHANGE: "auction:status_change",
   ENDED: "auction:ended",
+  EXTENDED: "auction:extended",
   TIMER: "auction:timer",
   STATE: "auction:state",
   ERROR: "error",

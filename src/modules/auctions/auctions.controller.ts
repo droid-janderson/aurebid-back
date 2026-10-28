@@ -16,43 +16,141 @@ import {
   validateBidAmount,
   getBatchTiming,
 } from "../../shared/utils";
-import { appendBidAudit } from "../../shared/utils/audit";
-import { auctionSocket } from "../../sockets/auction.socket";
 import {
-  createSettlementForBatch,
-  releaseBatchReservations,
-} from "../settlements/settlements.service";
-import { verifyBidAuditChain } from "../../shared/utils/audit";
+  ANTI_SNIPING_EXTENSION_MS,
+  extendedEndsAt,
+  getDatabaseNow,
+  getServerNow,
+  isPastDeadline,
+  shouldExtendBatch,
+} from "../../shared/utils/clock";
+import { publicActorLabel } from "../../shared/utils/privacy";
+import { appendBidAudit, verifyBidAuditChain } from "../../shared/utils/audit";
+import { auctionSocket } from "../../sockets/auction.socket";
+import { settleBatch } from "../settlements/settlements.service";
+import { releaseOtherReservations } from "../wallets/reservations.service";
+import { holdReservation } from "../wallets/reservations.service";
+
+const MAX_BID_ATTEMPTS = 3;
+
+type Viewer = { id: string; role: string } | null;
 
 const batchInclude = {
-  seller: { select: { id: true, name: true, email: true } },
+  seller: { select: { id: true, name: true } },
   bids: {
-    orderBy: { amount: "desc" as const },
+    orderBy: [{ amount: "desc" as const }, { createdAt: "asc" as const }],
     take: 1,
     select: { id: true, bidderId: true, amount: true, createdAt: true },
   },
   _count: { select: { bids: true } },
 };
 
-function serializeBatch(batch: any) {
-  const highestBid = batch.bids?.[0];
+function viewerOf(req: RequestWithUser): Viewer {
+  return req.user ? { id: req.user.id, role: req.user.role } : null;
+}
+
+function serializeBid(
+  batchId: string,
+  sellerId: string,
+  bid: any,
+  viewer: Viewer,
+) {
+  const isMine = Boolean(viewer && viewer.id === bid.bidderId);
+  const canSeeName = Boolean(
+    viewer && (viewer.role === "ADMIN" || viewer.id === sellerId),
+  );
 
   return {
-    ...batch,
+    id: bid.id,
+    batchId: bid.batchId ?? batchId,
+    amount: formatDecimal(bid.amount),
+    createdAt: bid.createdAt,
+    ...(bid.audit ? { audit: bid.audit } : {}),
+    bidder: {
+      label: publicActorLabel(batchId, bid.bidderId, "bidder"),
+      isMine,
+      ...(canSeeName && bid.bidder?.name ? { name: bid.bidder.name } : {}),
+    },
+  };
+}
+
+function serializeSettlement(
+  batchId: string,
+  settlement: any,
+  viewer: Viewer,
+  participants: { sellerId: string; buyerId: string },
+) {
+  if (!settlement) return null;
+
+  const canShareToken = Boolean(
+    viewer &&
+    (viewer.role === "ADMIN" ||
+      viewer.id === participants.sellerId ||
+      viewer.id === participants.buyerId),
+  );
+
+  return {
+    id: settlement.id,
+    status: settlement.status,
+    amount: formatDecimal(settlement.amount),
+    receiptNumber: settlement.receiptNumber,
+    completedAt: settlement.completedAt,
+    failureReason: settlement.failureReason ?? null,
+    buyerLabel:
+      settlement.buyerLabel ??
+      publicActorLabel(batchId, participants.buyerId, "buyer"),
+    sellerLabel:
+      settlement.sellerLabel ??
+      publicActorLabel(batchId, participants.sellerId, "seller"),
+    ...(canShareToken ? { publicToken: settlement.publicToken } : {}),
+  };
+}
+
+function serializeBatch(batch: any, viewer: Viewer = null) {
+  const highestBid = batch.bids?.[0];
+  const settlement = serializeSettlement(batch.id, batch.settlement, viewer, {
+    sellerId: batch.sellerId,
+    buyerId: batch.settlement?.buyerId ?? "",
+  });
+
+  return {
+    id: batch.id,
+    sellerId: batch.sellerId,
+    productSource: batch.productSource,
+    externalProductId: batch.externalProductId,
+    title: batch.title,
+    description: batch.description,
+    imageUrl: batch.imageUrl,
+    productData: batch.productData,
     startingPrice: formatDecimal(batch.startingPrice),
     minimumIncrement: formatDecimal(batch.minimumIncrement),
+    startsAt: batch.startsAt,
+    endsAt: batch.endsAt,
+    status: batch.status,
+    createdAt: batch.createdAt,
+    updatedAt: batch.updatedAt,
+    seller: batch.seller
+      ? { id: batch.seller.id, name: batch.seller.name }
+      : undefined,
+    bids: Array.isArray(batch.bids)
+      ? batch.bids.map((bid: any) =>
+          serializeBid(batch.id, batch.sellerId, bid, viewer),
+        )
+      : undefined,
     currentPrice: highestBid
       ? formatDecimal(highestBid.amount)
       : formatDecimal(batch.startingPrice),
-    bidCount: batch._count?.bids ?? 0,
+    bidCount: batch._count?.bids ?? batch.bids?.length ?? 0,
     timing: getBatchTiming(batch.startsAt, batch.endsAt),
+    settlement,
+    _count: batch._count,
   };
 }
 
 async function findBatchOrFail(id: string) {
   const batch = await prisma.batch.findUnique({ where: { id } });
 
-  if (!batch) {
+  if (!batch || batch.deletedAt) {
     throw new NotFoundError("Batch");
   }
 
@@ -91,9 +189,10 @@ export const listAuctions = asyncHandler(
       skip,
     } = parsePaginationParams(page, limit);
 
-    const where: any = status
-      ? { status }
-      : { status: { notIn: ["DRAFT", "CANCELLED"] } };
+    const where: any = {
+      deletedAt: null,
+      ...(status ? { status } : { status: { notIn: ["DRAFT", "CANCELLED"] } }),
+    };
 
     if (sellerId) where.sellerId = sellerId;
     if (search) {
@@ -114,9 +213,11 @@ export const listAuctions = asyncHandler(
       prisma.batch.count({ where }),
     ]);
 
+    const viewer = viewerOf(req);
+
     res.json({
       success: true,
-      data: batchs.map(serializeBatch),
+      data: batchs.map((batch) => serializeBatch(batch, viewer)),
       meta: buildPaginatedResponse(batchs, total, pageNum, limitNum).meta,
     });
   },
@@ -125,13 +226,14 @@ export const listAuctions = asyncHandler(
 export const getAuctionById = asyncHandler(
   async (req: RequestWithUser, res: Response) => {
     const { id } = req.params;
+    const viewer = viewerOf(req);
 
     const batch = await prisma.batch.findUnique({
       where: { id },
       include: {
-        seller: { select: { id: true, name: true, email: true } },
+        seller: { select: { id: true, name: true } },
         bids: {
-          orderBy: { amount: "desc" },
+          orderBy: [{ amount: "desc" }, { createdAt: "asc" }],
           take: 10,
           include: { bidder: { select: { id: true, name: true } } },
         },
@@ -143,19 +245,23 @@ export const getAuctionById = asyncHandler(
             receiptNumber: true,
             publicToken: true,
             completedAt: true,
+            buyerId: true,
+            buyerLabel: true,
+            sellerLabel: true,
+            failureReason: true,
           },
         },
         _count: { select: { bids: true, auditEntries: true } },
       },
     });
 
-    if (!batch) {
+    if (!batch || batch.deletedAt) {
       throw new NotFoundError("Batch");
     }
 
     res.json({
       success: true,
-      data: serializeBatch(batch),
+      data: serializeBatch(batch, viewer),
     });
   },
 );
@@ -174,7 +280,7 @@ export const publishAuction = asyncHandler(
       );
     }
 
-    const now = new Date();
+    const now = await getServerNow();
 
     if (batch.endsAt <= now) {
       throw new Loterror("Batch end date is in the past", "INVALID_DATE_RANGE");
@@ -193,7 +299,7 @@ export const publishAuction = asyncHandler(
     res.json({
       success: true,
       message: status === "ACTIVE" ? "Batch is now active" : "Batch scheduled",
-      data: serializeBatch(updatedBatch),
+      data: serializeBatch(updatedBatch, viewerOf(req)),
     });
   },
 );
@@ -211,7 +317,8 @@ export const cancelAuction = asyncHandler(
     }
 
     const updatedBatch = await prisma.$transaction(async (tx) => {
-      await releaseBatchReservations(tx, id);
+      await tx.$queryRaw`SELECT id FROM "Batch" WHERE id = ${id} FOR UPDATE`;
+      await releaseOtherReservations(tx, id);
 
       return tx.batch.update({
         where: { id },
@@ -225,7 +332,7 @@ export const cancelAuction = asyncHandler(
     res.json({
       success: true,
       message: "Batch cancelled successfully",
-      data: serializeBatch(updatedBatch),
+      data: serializeBatch(updatedBatch, viewerOf(req)),
     });
   },
 );
@@ -242,14 +349,14 @@ export const endAuction = asyncHandler(
       throw new ConflictError("Only active batchs can be ended");
     }
 
-    const settlement = await createSettlementForBatch(id);
+    const { settlement, outcome } = await settleBatch(id, { force: true });
 
     const updatedBatch = await prisma.batch.findUnique({
       where: { id },
       include: {
         ...batchInclude,
         bids: {
-          orderBy: { amount: "desc" },
+          orderBy: [{ amount: "desc" }, { createdAt: "asc" }],
           take: 1,
           include: { bidder: { select: { id: true, name: true } } },
         },
@@ -260,18 +367,24 @@ export const endAuction = asyncHandler(
 
     res.json({
       success: true,
-      message: settlement
-        ? "Batch ended and settlement created"
-        : "Batch ended without bids",
+      message:
+        outcome === "ENDED_WITHOUT_BIDS"
+          ? "Batch ended without bids"
+          : "Batch ended and settled",
       data: {
-        batch: updatedBatch ? serializeBatch(updatedBatch) : null,
-        settlement,
+        batch: updatedBatch
+          ? serializeBatch(updatedBatch, viewerOf(req))
+          : null,
+        settlement: settlement
+          ? serializeSettlement(id, settlement, viewerOf(req), {
+              sellerId: batch.sellerId,
+              buyerId: settlement.buyerId,
+            })
+          : null,
       },
     });
   },
 );
-
-const MAX_BID_ATTEMPTS = 3;
 
 export const placeBid = asyncHandler(
   async (req: RequestWithUser, res: Response) => {
@@ -283,13 +396,30 @@ export const placeBid = asyncHandler(
 
     for (let attempt = 1; attempt <= MAX_BID_ATTEMPTS; attempt += 1) {
       try {
-        const bid = await prisma.$transaction(async (tx) => {
+        const result = await prisma.$transaction(async (tx) => {
+          const locked = await tx.$queryRaw<Array<{ id: string }>>`
+            SELECT id FROM "Batch" WHERE id = ${id} FOR UPDATE
+          `;
+
+          if (locked.length === 0) {
+            throw new NotFoundError("Batch");
+          }
+
           const batch = await tx.batch.findUnique({
             where: { id },
-            include: { bids: { orderBy: { amount: "desc" }, take: 1 } },
+            include: {
+              bids: {
+                orderBy: [
+                  { amount: "desc" },
+                  { createdAt: "asc" },
+                  { id: "asc" },
+                ],
+                take: 1,
+              },
+            },
           });
 
-          if (!batch) {
+          if (!batch || batch.deletedAt) {
             throw new NotFoundError("Batch");
           }
 
@@ -300,17 +430,33 @@ export const placeBid = asyncHandler(
             );
           }
 
-          if (batch.status !== "ACTIVE") {
+          const now = await getDatabaseNow(tx);
+
+          if (batch.status === "CANCELLED") {
+            throw new BidError("Batch was cancelled", "BATCH_CANCELLED");
+          }
+
+          if (batch.status === "ENDED" || batch.status === "SETTLED") {
+            throw new BidError("Batch has already ended", "BATCH_ENDED");
+          }
+
+          if (batch.status === "DRAFT") {
             throw new BidError("Batch is not active", "BATCH_NOT_ACTIVE");
           }
 
-          const now = new Date();
-          if (now < batch.startsAt || now > batch.endsAt) {
+          if (now < batch.startsAt) {
             throw new BidError(
-              "Batch is outside the bidding window",
-              "BATCH_NOT_OPEN",
+              "Batch has not started yet",
+              "BATCH_NOT_STARTED",
             );
           }
+
+          if (isPastDeadline(batch.endsAt, now)) {
+            throw new BidError("Batch has already ended", "BATCH_ENDED");
+          }
+
+          const activated = batch.status === "SCHEDULED";
+          const status = activated ? "ACTIVE" : batch.status;
 
           const highestBid = batch.bids[0];
 
@@ -333,6 +479,14 @@ export const placeBid = asyncHandler(
 
           if (!validation.valid) {
             throw new BidError(validation.error!, "INVALID_BID_AMOUNT");
+          }
+
+          const walletRows = await tx.$queryRaw<Array<{ id: string }>>`
+            SELECT id FROM "Wallet" WHERE "userId" = ${user.id} FOR UPDATE
+          `;
+
+          if (walletRows.length === 0) {
+            throw new BidError("Wallet not found", "WALLET_NOT_FOUND");
           }
 
           const wallet = await tx.wallet.findUnique({
@@ -374,42 +528,67 @@ export const placeBid = asyncHandler(
 
           await appendBidAudit(tx, createdBid);
 
-          const currentReservation = wallet.reservations.find(
-            (reservation) => reservation.batchId === batch.id,
-          );
+          await releaseOtherReservations(tx, batch.id, wallet.id);
 
-          if (currentReservation) {
-            await tx.walletReservation.update({
-              where: { id: currentReservation.id },
+          await holdReservation(tx, {
+            walletId: wallet.id,
+            batchId: batch.id,
+            bidId: createdBid.id,
+            amount,
+          });
+
+          const extended = shouldExtendBatch(batch.endsAt, now);
+          const endsAt = extended ? extendedEndsAt(batch.endsAt) : batch.endsAt;
+
+          if (extended || activated) {
+            await tx.batch.update({
+              where: { id: batch.id },
               data: {
-                bidId: createdBid.id,
-                amount,
-                status: "ACTIVE",
-              },
-            });
-          } else {
-            await tx.walletReservation.create({
-              data: {
-                walletId: wallet.id,
-                batchId: batch.id,
-                bidId: createdBid.id,
-                amount,
-                status: "ACTIVE",
+                ...(activated ? { status } : {}),
+                ...(extended ? { endsAt } : {}),
               },
             });
           }
 
-          return createdBid;
+          return {
+            bid: createdBid,
+            endsAt,
+            extended,
+            activated,
+            status,
+            startsAt: batch.startsAt,
+          };
         });
 
-        auctionSocket.emitNewBid(id, bid);
+        auctionSocket.emitNewBid(id, result.bid);
+
+        if (result.extended) {
+          auctionSocket.emitAuctionExtended(
+            id,
+            result.endsAt,
+            ANTI_SNIPING_EXTENSION_MS,
+          );
+        }
+
+        if (result.activated) {
+          auctionSocket.emitAuctionStatusChange({
+            id,
+            status: result.status,
+            startsAt: result.startsAt,
+            endsAt: result.endsAt,
+          });
+        }
 
         return res.status(201).json({
           success: true,
           message: "Bid placed successfully",
           data: {
-            ...bid,
-            amount: formatDecimal(bid.amount),
+            id: result.bid.id,
+            amount: formatDecimal(result.bid.amount),
+            createdAt: result.bid.createdAt,
+            endsAt: result.endsAt.toISOString(),
+            extended: result.extended,
+            status: result.status,
           },
         });
       } catch (error) {
@@ -444,12 +623,14 @@ export const getAuctionBids = asyncHandler(
 
     const batch = await prisma.batch.findUnique({
       where: { id },
-      select: { id: true },
+      select: { id: true, sellerId: true, deletedAt: true },
     });
-    if (!batch) {
+
+    if (!batch || batch.deletedAt) {
       throw new NotFoundError("Batch");
     }
 
+    const viewer = viewerOf(req);
     const where: any = { batchId: id };
     if (bidderId) where.bidderId = bidderId;
 
@@ -458,10 +639,17 @@ export const getAuctionBids = asyncHandler(
         where,
         skip,
         take: limitNum,
-        orderBy: { amount: "desc" },
+        orderBy: [{ amount: "desc" }, { createdAt: "asc" }, { id: "asc" }],
         include: {
           bidder: { select: { id: true, name: true } },
-          audit: { select: { sequence: true, previousHash: true, currentHash: true } },
+          audit: {
+            select: {
+              sequence: true,
+              previousHash: true,
+              currentHash: true,
+              createdAt: true,
+            },
+          },
         },
       }),
       prisma.bid.count({ where }),
@@ -469,24 +657,31 @@ export const getAuctionBids = asyncHandler(
 
     res.json({
       success: true,
-      data: bids.map((bid) => ({ ...bid, amount: formatDecimal(bid.amount) })),
+      data: bids.map((bid) => serializeBid(id, batch.sellerId, bid, viewer)),
       meta: buildPaginatedResponse(bids, total, pageNum, limitNum).meta,
     });
   },
 );
+
+async function findAuditableBatchOrFail(id: string) {
+  const batch = await prisma.batch.findUnique({
+    where: { id },
+    select: { id: true, status: true, deletedAt: true },
+  });
+
+  if (!batch || batch.deletedAt || batch.status === "CANCELLED") {
+    throw new NotFoundError("Batch");
+  }
+
+  return batch;
+}
 
 export const getPublicAudit = asyncHandler(
   async (req: RequestWithUser, res: Response) => {
     const { id } = req.params;
     const { page = 1, limit = 100 } = req.query;
 
-    const batch = await prisma.batch.findUnique({
-      where: { id },
-      select: { id: true },
-    });
-    if (!batch) {
-      throw new NotFoundError("Batch");
-    }
+    await findAuditableBatchOrFail(id);
 
     const {
       page: pageNum,
@@ -518,7 +713,9 @@ export const getPublicAudit = asyncHandler(
         createdAt: entry.createdAt,
         bidId: entry.bidId,
         amount: entry.bid ? formatDecimal(entry.bid.amount) : null,
-        bidder: { id: entry.bid?.bidder?.id ?? null },
+        bidder: entry.bid?.bidder
+          ? { label: publicActorLabel(id, entry.bid.bidder.id, "bidder") }
+          : null,
       })),
       meta: buildPaginatedResponse(entries, total, pageNum, limitNum).meta,
     });
@@ -529,13 +726,7 @@ export const verifyPublicAudit = asyncHandler(
   async (req: RequestWithUser, res: Response) => {
     const { id } = req.params;
 
-    const batch = await prisma.batch.findUnique({
-      where: { id },
-      select: { id: true },
-    });
-    if (!batch) {
-      throw new NotFoundError("Batch");
-    }
+    await findAuditableBatchOrFail(id);
 
     const verification = await verifyBidAuditChain(id);
 
@@ -549,7 +740,6 @@ export const verifyPublicAudit = asyncHandler(
   },
 );
 
-// Admin routes
 export const listAllAuctions = asyncHandler(
   async (req: RequestWithUser, res: Response) => {
     const {
@@ -568,7 +758,7 @@ export const listAllAuctions = asyncHandler(
       skip,
     } = parsePaginationParams(page, limit);
 
-    const where: any = {};
+    const where: any = { deletedAt: null };
     if (status) where.status = status;
     if (sellerId) where.sellerId = sellerId;
     if (search) {
@@ -594,9 +784,11 @@ export const listAllAuctions = asyncHandler(
       prisma.batch.count({ where }),
     ]);
 
+    const viewer = viewerOf(req);
+
     res.json({
       success: true,
-      data: batchs.map(serializeBatch),
+      data: batchs.map((batch) => serializeBatch(batch, viewer)),
       meta: buildPaginatedResponse(batchs, total, pageNum, limitNum).meta,
     });
   },
@@ -611,7 +803,8 @@ export const updateAuctionStatus = asyncHandler(
 
     const updatedBatch = await prisma.$transaction(async (tx) => {
       if (status === "CANCELLED") {
-        await releaseBatchReservations(tx, id);
+        await tx.$queryRaw`SELECT id FROM "Batch" WHERE id = ${id} FOR UPDATE`;
+        await releaseOtherReservations(tx, id);
       }
 
       return tx.batch.update({
@@ -628,7 +821,7 @@ export const updateAuctionStatus = asyncHandler(
       message: "Batch status updated",
       data: {
         previousStatus: batch.status,
-        batch: serializeBatch(updatedBatch),
+        batch: serializeBatch(updatedBatch, viewerOf(req)),
       },
     });
   },

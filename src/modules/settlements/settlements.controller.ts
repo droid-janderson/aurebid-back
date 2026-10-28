@@ -34,16 +34,53 @@ const settlementInclude = {
   seller: { select: { id: true, name: true, email: true } },
 } as const;
 
-function serializeSettlement(settlement: any) {
+function serializeSettlement(
+  settlement: any,
+  options: { revealNames?: boolean } = {},
+) {
+  const { revealNames = true } = options;
+
+  const party = (user: any, label: string | null | undefined) => {
+    if (!user) return null;
+
+    return revealNames
+      ? { id: user.id, name: user.name, label: label ?? null }
+      : { label: label ?? null };
+  };
+
   return {
-    ...settlement,
+    id: settlement.id,
+    batchId: settlement.batchId,
+    buyerId: revealNames ? settlement.buyerId : undefined,
+    sellerId: revealNames ? settlement.sellerId : undefined,
     amount: formatDecimal(settlement.amount),
+    receiptNumber: settlement.receiptNumber,
+    status: settlement.status,
+    completedAt: settlement.completedAt,
+    failureReason: settlement.failureReason ?? null,
+    buyerLabel: settlement.buyerLabel ?? null,
+    sellerLabel: settlement.sellerLabel ?? null,
+    batchTitle: settlement.batchTitle ?? settlement.batch?.title ?? null,
+    batchImageUrl:
+      settlement.batchImageUrl ?? settlement.batch?.imageUrl ?? null,
+    batchEndsAt: settlement.batchEndsAt ?? settlement.batch?.endsAt ?? null,
+    batch: settlement.batch
+      ? {
+          id: settlement.batch.id,
+          title: settlement.batch.title,
+          status: settlement.batch.status,
+          imageUrl: settlement.batch.imageUrl,
+          endsAt: settlement.batch.endsAt,
+        }
+      : null,
     winningBid: settlement.winningBid
       ? {
           ...settlement.winningBid,
           amount: formatDecimal(settlement.winningBid.amount),
         }
       : null,
+    buyer: party(settlement.buyer, settlement.buyerLabel),
+    seller: party(settlement.seller, settlement.sellerLabel),
   };
 }
 
@@ -90,7 +127,7 @@ export const listMySettlements = asyncHandler(
 
     res.json({
       success: true,
-      data: settlements.map(serializeSettlement),
+      data: settlements.map((settlement) => serializeSettlement(settlement)),
       meta: buildPaginatedResponse(settlements, total, pageNum, limitNum).meta,
     });
   },
@@ -143,7 +180,7 @@ export const getSettlementByToken = asyncHandler(
 
     res.json({
       success: true,
-      data: serializeSettlement(settlement),
+      data: serializeSettlement(settlement, { revealNames: false }),
     });
   },
 );
@@ -170,7 +207,6 @@ export const processSettlement = asyncHandler(
   },
 );
 
-// Admin routes
 export const listAllSettlements = asyncHandler(
   async (req: RequestWithUser, res: Response) => {
     const { page = 1, limit = 20, status, batchId } = req.query;
@@ -198,7 +234,7 @@ export const listAllSettlements = asyncHandler(
 
     res.json({
       success: true,
-      data: settlements.map(serializeSettlement),
+      data: settlements.map((settlement) => serializeSettlement(settlement)),
       meta: buildPaginatedResponse(settlements, total, pageNum, limitNum).meta,
     });
   },

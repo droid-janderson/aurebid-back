@@ -14,7 +14,6 @@ router.get('/transactions', validate(transactionQuerySchema), asyncHandler(walle
 router.post('/deposit', validate(depositSchema), asyncHandler(walletsController.deposit));
 router.post('/withdraw', validate(withdrawSchema), asyncHandler(walletsController.withdraw));
 
-// Admin
 router.get('/admin/all', authorize(['ADMIN']), validate(transactionQuerySchema), asyncHandler(walletsController.listAllWallets));
 router.get('/admin/:userId', authorize(['ADMIN']), asyncHandler(walletsController.getWalletByUserId));
 

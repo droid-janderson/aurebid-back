@@ -5,6 +5,7 @@ import { env } from "../config/env";
 import { prisma } from "../config/database";
 import { JWTPayload } from "../shared/types";
 import { formatDecimal } from "../shared/utils";
+import { publicActorLabel, serverTimeIso } from "../shared/utils/privacy";
 
 interface AuthenticatedSocket extends Socket {
   user?: {
@@ -86,13 +87,15 @@ export function initializeSocketServer(httpServer: HTTPServer): SocketIOServer {
           },
         });
 
-        if (!batch) {
+        if (!batch || batch.deletedAt) {
           socket.emit("error", { message: "Batch not found" });
           return;
         }
 
         socket.join(`auction:${batchId}`);
         authSocket.batchRooms.add(batchId);
+
+        const now = Date.now();
 
         socket.emit("auction:state", {
           batchId,
@@ -101,10 +104,13 @@ export function initializeSocketServer(httpServer: HTTPServer): SocketIOServer {
             ? formatDecimal(batch.bids[0].amount)
             : formatDecimal(batch.startingPrice),
           bidCount: batch._count.bids,
+          endsAt: batch.endsAt.toISOString(),
+          startsAt: batch.startsAt.toISOString(),
           timeRemaining: Math.max(
             0,
-            new Date(batch.endsAt).getTime() - Date.now(),
+            new Date(batch.endsAt).getTime() - now,
           ),
+          serverTime: serverTimeIso(),
         });
 
         console.log(`User ${authSocket.user?.name} joined batch ${batchId}`);
@@ -148,10 +154,12 @@ export const auctionSocket = {
         amount: formatDecimal(bid.amount),
         createdAt: bid.createdAt,
         bidder: {
-          id: bid.bidder?.id,
-          name: bid.bidder?.name,
+          label: bid.bidderId
+            ? publicActorLabel(batchId, bid.bidderId, "bidder")
+            : null,
         },
       },
+      serverTime: serverTimeIso(),
     });
   },
 
@@ -162,18 +170,42 @@ export const auctionSocket = {
       status: batch.status,
       startsAt: batch.startsAt,
       endsAt: batch.endsAt,
+      serverTime: serverTimeIso(),
     });
   },
 
   emitAuctionEnded: (batch: any) => {
     if (!io) return;
-    const winner = batch?.bids?.[0]?.bidder ?? null;
+    const winnerBid = batch?.bids?.[0] ?? null;
 
     io.to(`auction:${batch.id}`).emit("auction:ended", {
       batchId: batch.id,
       status: batch.status,
-      winner: winner ? { id: winner.id, name: winner.name } : null,
-      finalPrice: batch?.bids?.[0] ? formatDecimal(batch.bids[0].amount) : null,
+      winner: winnerBid
+        ? {
+            label: publicActorLabel(
+              batch.id,
+              winnerBid.bidderId ?? winnerBid.bidder?.id,
+              "bidder",
+            ),
+          }
+        : null,
+      finalPrice: winnerBid ? formatDecimal(winnerBid.amount) : null,
+      serverTime: serverTimeIso(),
+    });
+  },
+
+  emitAuctionExtended: (
+    batchId: string,
+    endsAt: Date,
+    extendedBy: number,
+  ) => {
+    if (!io) return;
+    io.to(`auction:${batchId}`).emit("auction:extended", {
+      batchId,
+      endsAt: endsAt.toISOString(),
+      extendedBy,
+      serverTime: serverTimeIso(),
     });
   },
 
@@ -182,6 +214,7 @@ export const auctionSocket = {
     io.to(`auction:${batchId}`).emit("auction:timer", {
       batchId,
       timeRemaining,
+      serverTime: serverTimeIso(),
     });
   },
 

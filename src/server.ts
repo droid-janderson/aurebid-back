@@ -2,7 +2,10 @@ import { initializeApp } from "./app";
 import { env } from "./config/env";
 import { disconnectDatabase } from "./config/database";
 import { initializeSocketServer } from "./sockets/socket.server";
-import { runAuctionJobs } from "./jobs/close-auctions.job";
+import {
+  startAuctionScheduler,
+  stopAuctionScheduler,
+} from "./jobs/auction-scheduler";
 
 const startServer = async (): Promise<void> => {
   try {
@@ -25,16 +28,12 @@ const startServer = async (): Promise<void> => {
     initializeSocketServer(server);
     console.log("🔌 Socket.io server initialized");
 
-    const jobInterval = setInterval(() => {
-      runAuctionJobs().catch(console.error);
-    }, 30000);
-
-    runAuctionJobs().catch(console.error);
+    await startAuctionScheduler();
 
     const shutdown = async (signal: string): Promise<void> => {
       console.log(`\n${signal} received. Starting graceful shutdown...`);
 
-      clearInterval(jobInterval);
+      stopAuctionScheduler();
 
       server.close(async () => {
         console.log("HTTP server closed");

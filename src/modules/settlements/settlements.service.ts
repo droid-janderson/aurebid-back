@@ -1,12 +1,19 @@
 import { Prisma } from "@prisma/client";
 import { prisma } from "../../config/database";
+import { env } from "../../config/env";
 import { formatDecimal } from "../../shared/utils";
+import { getDatabaseNow, isPastDeadline } from "../../shared/utils/clock";
+import { publicActorLabel } from "../../shared/utils/privacy";
 import {
   ConflictError,
   NotFoundError,
   SettlementError,
   WalletError,
 } from "../../shared/errors";
+import {
+  consumeReservation,
+  releaseOtherReservations,
+} from "../wallets/reservations.service";
 
 type Tx = Prisma.TransactionClient;
 
@@ -17,89 +24,294 @@ export function buildReceiptNumber(
   return `REC-${reference.getFullYear()}-${batchId.slice(-8).toUpperCase()}`;
 }
 
+async function lockWallet(tx: Tx, walletId: string): Promise<void> {
+  await tx.$queryRaw`SELECT id FROM "Wallet" WHERE id = ${walletId} FOR UPDATE`;
+}
+
 export async function releaseBatchReservations(
   tx: Tx,
   batchId: string,
   keepWalletId?: string,
 ): Promise<number> {
-  const result = await tx.walletReservation.updateMany({
-    where: {
-      batchId,
-      status: "ACTIVE",
-      ...(keepWalletId ? { walletId: { not: keepWalletId } } : {}),
-    },
-    data: { status: "RELEASED" },
-  });
-
-  return result.count;
+  return releaseOtherReservations(tx, batchId, keepWalletId);
 }
 
-export async function createSettlementForBatch(batchId: string) {
-  return prisma.$transaction(async (tx) => {
-    const batch = await tx.batch.findUnique({
-      where: { id: batchId },
-      include: {
-        bids: {
-          orderBy: { amount: "desc" },
-          take: 1,
-          include: { bidder: true },
+type SettleResult = {
+  settlement: Prisma.SettlementGetPayload<object> | null;
+  outcome: "SETTLED" | "ENDED_WITHOUT_BIDS" | "SKIPPED";
+};
+
+export async function settleBatch(
+  batchId: string,
+  options: { force?: boolean } = {},
+): Promise<SettleResult> {
+  try {
+    return await prisma.$transaction(async (tx) => {
+      const locked = await tx.$queryRaw<Array<{ id: string }>>`
+        SELECT id FROM "Batch" WHERE id = ${batchId} FOR UPDATE
+      `;
+
+      if (locked.length === 0) {
+        throw new NotFoundError("Batch");
+      }
+
+      const batch = await tx.batch.findUnique({
+        where: { id: batchId },
+        include: {
+          bids: {
+            orderBy: [{ amount: "desc" }, { createdAt: "asc" }, { id: "asc" }],
+            take: 1,
+            include: { bidder: { select: { id: true } } },
+          },
+          settlement: true,
         },
-        settlement: true,
-      },
-    });
-
-    if (!batch) {
-      throw new NotFoundError("Batch");
-    }
-
-    if (batch.settlement) {
-      return batch.settlement;
-    }
-
-    if (!["ACTIVE", "ENDED"].includes(batch.status)) {
-      throw new SettlementError(
-        "Batch is not ready to be settled",
-        "BATCH_NOT_SETTLEABLE",
-      );
-    }
-
-    const winningBid = batch.bids[0];
-
-    if (!winningBid) {
-      await tx.batch.update({
-        where: { id: batch.id },
-        data: { status: "ENDED" },
       });
-      await releaseBatchReservations(tx, batch.id);
-      return null;
-    }
 
-    await tx.batch.update({
-      where: { id: batch.id },
-      data: { status: "ENDED" },
+      if (!batch || batch.deletedAt) {
+        throw new NotFoundError("Batch");
+      }
+
+      const now = await getDatabaseNow(tx);
+
+      if (batch.status === "CANCELLED" || batch.status === "DRAFT") {
+        throw new SettlementError(
+          "Batch is not ready to be settled",
+          "BATCH_NOT_SETTLEABLE",
+        );
+      }
+
+      if (
+        !options.force &&
+        batch.status !== "ENDED" &&
+        !isPastDeadline(batch.endsAt, now)
+      ) {
+        return { settlement: batch.settlement, outcome: "SKIPPED" as const };
+      }
+
+      const winningBid = batch.bids[0];
+
+      if (!winningBid) {
+        await tx.batch.update({
+          where: { id: batch.id },
+          data: { status: "ENDED" },
+        });
+        await releaseOtherReservations(tx, batch.id);
+        return { settlement: null, outcome: "ENDED_WITHOUT_BIDS" as const };
+      }
+
+      if (batch.settlement?.status === "COMPLETED") {
+        return {
+          settlement: batch.settlement,
+          outcome: "SETTLED" as const,
+        };
+      }
+
+      const buyerLabel = publicActorLabel(
+        batch.id,
+        winningBid.bidderId,
+        "buyer",
+      );
+      const sellerLabel = publicActorLabel(batch.id, batch.sellerId, "seller");
+
+      const settlement =
+        batch.settlement ??
+        (await tx.settlement.create({
+          data: {
+            batchId: batch.id,
+            winningBidId: winningBid.id,
+            buyerId: winningBid.bidderId,
+            sellerId: batch.sellerId,
+            amount: winningBid.amount,
+            receiptNumber: buildReceiptNumber(batch.id, now),
+            status: "PENDING",
+            batchTitle: batch.title,
+            batchImageUrl: batch.imageUrl,
+            batchEndsAt: batch.endsAt,
+            buyerLabel,
+            sellerLabel,
+          },
+        }));
+
+      const attempts = settlement.attempts + 1;
+
+      if (settlement.attempts >= env.settlement.maxAttempts) {
+        return { settlement, outcome: "SKIPPED" as const };
+      }
+
+      const claim = await tx.settlement.updateMany({
+        where: {
+          id: settlement.id,
+          status: { in: ["PENDING", "PROCESSING", "FAILED"] },
+        },
+        data: { status: "PROCESSING", attempts },
+      });
+
+      if (claim.count === 0) {
+        const current = await tx.settlement.findUnique({
+          where: { id: settlement.id },
+        });
+
+        if (current?.status === "COMPLETED") {
+          return { settlement: current, outcome: "SETTLED" as const };
+        }
+
+        return { settlement: current, outcome: "SKIPPED" as const };
+      }
+
+      const amount = formatDecimal(settlement.amount);
+
+      const wallets = await tx.wallet.findMany({
+        where: { userId: { in: [settlement.buyerId, settlement.sellerId] } },
+      });
+
+      const buyerWallet = wallets.find(
+        (wallet) => wallet.userId === settlement.buyerId,
+      );
+      const sellerWallet = wallets.find(
+        (wallet) => wallet.userId === settlement.sellerId,
+      );
+
+      if (!buyerWallet) {
+        throw new WalletError("Buyer wallet not found", "WALLET_NOT_FOUND");
+      }
+
+      if (!sellerWallet) {
+        throw new WalletError("Seller wallet not found", "WALLET_NOT_FOUND");
+      }
+
+      for (const walletId of [buyerWallet.id, sellerWallet.id].sort()) {
+        await lockWallet(tx, walletId);
+      }
+
+      const debited = await tx.wallet.updateMany({
+        where: {
+          id: buyerWallet.id,
+          balance: { gte: new Prisma.Decimal(amount.toFixed(2)) },
+        },
+        data: { balance: { decrement: amount } },
+      });
+
+      if (debited.count !== 1) {
+        throw new WalletError(
+          "Buyer has insufficient balance to settle",
+          "INSUFFICIENT_FUNDS",
+        );
+      }
+
+      await tx.wallet.update({
+        where: { id: sellerWallet.id },
+        data: { balance: { increment: amount } },
+      });
+
+      await tx.walletTransaction.upsert({
+        where: {
+          settlementId_type: {
+            settlementId: settlement.id,
+            type: "BUYER_SETTLEMENT_DEBIT",
+          },
+        },
+        update: { amount, walletId: buyerWallet.id },
+        create: {
+          settlementId: settlement.id,
+          walletId: buyerWallet.id,
+          type: "BUYER_SETTLEMENT_DEBIT",
+          amount,
+          description: `Settlement ${settlement.receiptNumber} debit`,
+        },
+      });
+
+      await tx.walletTransaction.upsert({
+        where: {
+          settlementId_type: {
+            settlementId: settlement.id,
+            type: "SELLER_SETTLEMENT_CREDIT",
+          },
+        },
+        update: { amount, walletId: sellerWallet.id },
+        create: {
+          settlementId: settlement.id,
+          walletId: sellerWallet.id,
+          type: "SELLER_SETTLEMENT_CREDIT",
+          amount,
+          description: `Settlement ${settlement.receiptNumber} credit`,
+        },
+      });
+
+      await consumeReservation(tx, buyerWallet.id, settlement.batchId);
+      await releaseOtherReservations(tx, settlement.batchId, buyerWallet.id);
+
+      await tx.batch.update({
+        where: { id: settlement.batchId },
+        data: { status: "SETTLED" },
+      });
+
+      const completed = await tx.settlement.update({
+        where: { id: settlement.id },
+        data: {
+          status: "COMPLETED",
+          completedAt: now,
+          failureReason: null,
+        },
+        include: {
+          batch: true,
+          buyer: { select: { id: true, name: true, email: true } },
+        },
+      });
+
+      return { settlement: completed, outcome: "SETTLED" as const };
     });
+  } catch (error) {
+    await recordSettlementFailure(batchId, error);
+    throw error;
+  }
+}
 
-    const winnerWallet = await tx.wallet.findUnique({
-      where: { userId: winningBid.bidderId },
+async function recordSettlementFailure(
+  batchId: string,
+  error: unknown,
+): Promise<void> {
+  if (
+    error instanceof NotFoundError ||
+    (error instanceof SettlementError &&
+      error.code === "BATCH_NOT_SETTLEABLE")
+  ) {
+    return;
+  }
+
+  const reason =
+    error instanceof Error ? error.message : "Unknown settlement failure";
+
+  try {
+    await prisma.$transaction(async (tx) => {
+      const settlement = await tx.settlement.findUnique({
+        where: { batchId },
+      });
+
+      if (!settlement || settlement.status === "COMPLETED") return;
+
+      const attempts = settlement.attempts + 1;
+      const exhausted = attempts >= env.settlement.maxAttempts;
+
+      await tx.settlement.update({
+        where: { id: settlement.id },
+        data: {
+          attempts,
+          failureReason: reason.slice(0, 500),
+          status: exhausted ? "FAILED" : "PENDING",
+        },
+      });
     });
-    await releaseBatchReservations(tx, batch.id, winnerWallet?.id);
+  } catch (recordError) {
+    console.error("Could not record settlement failure:", recordError);
+  }
+}
 
-    const receiptNumber = buildReceiptNumber(batch.id);
-
-    const settlement = await tx.settlement.create({
-      data: {
-        batchId: batch.id,
-        winningBidId: winningBid.id,
-        buyerId: winningBid.bidderId,
-        sellerId: batch.sellerId,
-        amount: winningBid.amount,
-        receiptNumber,
-        status: "PENDING",
-      },
-    });
-
-    return settlement;
-  });
+export async function createSettlementForBatch(
+  batchId: string,
+  options: { force?: boolean } = {},
+) {
+  const { settlement } = await settleBatch(batchId, options);
+  return settlement;
 }
 
 export async function startSettlementProcessing(settlementId: string) {
@@ -111,11 +323,12 @@ export async function startSettlementProcessing(settlementId: string) {
     throw new NotFoundError("Settlement");
   }
 
-  if (settlement.status !== "PENDING") {
-    throw new SettlementError(
-      "Settlement is not pending",
-      "INVALID_SETTLEMENT_STATUS",
-    );
+  if (settlement.status === "COMPLETED") {
+    return settlement;
+  }
+
+  if (settlement.status === "FAILED") {
+    throw new SettlementError("Settlement has failed", "SETTLEMENT_FAILED");
   }
 
   return prisma.settlement.update({
@@ -134,122 +347,19 @@ export async function completeSettlement(settlementId: string) {
   }
 
   if (current.status === "COMPLETED") {
-    throw new ConflictError("Settlement is already completed");
+    return current;
   }
 
-  if (current.status === "FAILED") {
-    throw new SettlementError("Settlement has failed", "SETTLEMENT_FAILED");
+  const { settlement } = await settleBatch(current.batchId, { force: true });
+
+  if (!settlement) {
+    throw new SettlementError(
+      "Settlement could not be completed",
+      "SETTLEMENT_ERROR",
+    );
   }
 
-  return prisma.$transaction(async (tx) => {
-    const settlement = await tx.settlement.findUnique({
-      where: { id: settlementId },
-      include: { batch: true, winningBid: true },
-    });
-
-    if (!settlement) {
-      throw new NotFoundError("Settlement");
-    }
-
-    if (!["ENDED", "SETTLED"].includes(settlement.batch.status)) {
-      throw new SettlementError(
-        "Batch is not finished yet",
-        "BATCH_NOT_FINISHED",
-      );
-    }
-
-    const amount = formatDecimal(settlement.amount);
-
-    const [buyerWallet, sellerWallet] = await Promise.all([
-      tx.wallet.findUnique({ where: { userId: settlement.buyerId } }),
-      tx.wallet.findUnique({ where: { userId: settlement.sellerId } }),
-    ]);
-
-    if (!buyerWallet) {
-      throw new WalletError("Buyer wallet not found", "WALLET_NOT_FOUND");
-    }
-
-    if (!sellerWallet) {
-      throw new WalletError("Seller wallet not found", "WALLET_NOT_FOUND");
-    }
-
-    if (formatDecimal(buyerWallet.balance) < amount) {
-      throw new WalletError(
-        "Buyer has insufficient balance to settle",
-        "INSUFFICIENT_FUNDS",
-      );
-    }
-
-    await tx.wallet.update({
-      where: { id: buyerWallet.id },
-      data: { balance: { decrement: amount } },
-    });
-
-    await tx.wallet.update({
-      where: { id: sellerWallet.id },
-      data: { balance: { increment: amount } },
-    });
-
-    await tx.walletTransaction.upsert({
-      where: {
-        settlementId_type: {
-          settlementId: settlement.id,
-          type: "BUYER_SETTLEMENT_DEBIT",
-        },
-      },
-      update: { amount, walletId: buyerWallet.id },
-      create: {
-        settlementId: settlement.id,
-        walletId: buyerWallet.id,
-        type: "BUYER_SETTLEMENT_DEBIT",
-        amount,
-        description: `Settlement ${settlement.receiptNumber} debit`,
-      },
-    });
-
-    await tx.walletTransaction.upsert({
-      where: {
-        settlementId_type: {
-          settlementId: settlement.id,
-          type: "SELLER_SETTLEMENT_CREDIT",
-        },
-      },
-      update: { amount, walletId: sellerWallet.id },
-      create: {
-        settlementId: settlement.id,
-        walletId: sellerWallet.id,
-        type: "SELLER_SETTLEMENT_CREDIT",
-        amount,
-        description: `Settlement ${settlement.receiptNumber} credit`,
-      },
-    });
-
-    await tx.walletReservation.updateMany({
-      where: {
-        walletId: buyerWallet.id,
-        batchId: settlement.batchId,
-        status: "ACTIVE",
-      },
-      data: { status: "CONSUMED" },
-    });
-
-    await tx.batch.update({
-      where: { id: settlement.batchId },
-      data: { status: "SETTLED" },
-    });
-
-    return tx.settlement.update({
-      where: { id: settlement.id },
-      data: {
-        status: "COMPLETED",
-        completedAt: new Date(),
-      },
-      include: {
-        batch: true,
-        buyer: { select: { id: true, name: true, email: true } },
-      },
-    });
-  });
+  return settlement;
 }
 
 export async function failSettlement(settlementId: string) {
@@ -266,14 +376,13 @@ export async function failSettlement(settlementId: string) {
       throw new ConflictError("Completed settlements cannot fail");
     }
 
-    await tx.walletReservation.updateMany({
-      where: { batchId: settlement.batchId, status: "ACTIVE" },
-      data: { status: "RELEASED" },
-    });
-
     return tx.settlement.update({
       where: { id: settlement.id },
-      data: { status: "FAILED" },
+      data: {
+        status: "FAILED",
+        failureReason:
+          settlement.failureReason ?? "Marked as failed by an operator",
+      },
     });
   });
 }

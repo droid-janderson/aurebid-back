@@ -18,7 +18,6 @@ import {
 
 const router = Router();
 
-// Public
 router.post(
   "/register",
   validate(registerSchema),
@@ -35,7 +34,6 @@ router.post(
   asyncHandler(authController.refreshToken),
 );
 
-// Protected
 router.use(authenticate);
 router.get("/me", asyncHandler(authController.getMe));
 router.put(
@@ -50,7 +48,6 @@ router.post(
 );
 router.post("/logout", asyncHandler(authController.logout));
 
-// Admin
 router.get(
   "/users",
   authorize(["ADMIN"]),

@@ -190,59 +190,85 @@ export const deposit = asyncHandler(
 export const withdraw = asyncHandler(
   async (req: RequestWithUser, res: Response) => {
     const user = req.user!;
-    const { amount, method, destination } = req.body;
+    const amount = Number(Number(req.body.amount).toFixed(2));
+    const { method, destination } = req.body;
 
-    const wallet = await prisma.wallet.findUnique({
-      where: { userId: user.id },
-    });
-    if (!wallet) {
-      throw new NotFoundError("Wallet");
-    }
-
-    const reservedAmount = await getReservedAmount(wallet.id);
-    const availableAmount = formatDecimal(wallet.balance) - reservedAmount;
-
-    if (availableAmount < amount) {
-      throw new WalletError(
-        "Insufficient available balance",
-        "INSUFFICIENT_FUNDS",
-      );
+    if (!Number.isFinite(amount) || amount <= 0) {
+      throw new WalletError("Invalid withdrawal amount", "INVALID_AMOUNT");
     }
 
     const description = destination?.pixKey
       ? `Withdrawal via ${method} to ${destination.pixKey}`
       : `Withdrawal via ${method}`;
 
-    const [transaction, updatedWallet] = await prisma.$transaction([
-      prisma.walletTransaction.create({
+    const result = await prisma.$transaction(async (tx) => {
+      const locked = await tx.$queryRaw<Array<{ id: string }>>`
+        SELECT id FROM "Wallet" WHERE "userId" = ${user.id} FOR UPDATE
+      `;
+
+      if (locked.length === 0) {
+        throw new NotFoundError("Wallet");
+      }
+
+      const wallet = await tx.wallet.findUnique({
+        where: { id: locked[0].id },
+      });
+
+      if (!wallet) {
+        throw new NotFoundError("Wallet");
+      }
+
+      const reservations = await tx.walletReservation.findMany({
+        where: { walletId: wallet.id, status: "ACTIVE" },
+        select: { amount: true },
+      });
+
+      const reservedAmount = reservations.reduce(
+        (total, reservation) => total + formatDecimal(reservation.amount),
+        0,
+      );
+
+      const availableAmount =
+        formatDecimal(wallet.balance) - reservedAmount;
+
+      if (availableAmount < amount) {
+        throw new WalletError(
+          "Insufficient available balance",
+          "INSUFFICIENT_FUNDS",
+        );
+      }
+
+      const transaction = await tx.walletTransaction.create({
         data: {
           walletId: wallet.id,
           type: "ADJUSTMENT",
           amount: -amount,
           description,
         },
-      }),
-      prisma.wallet.update({
+      });
+
+      const updatedWallet = await tx.wallet.update({
         where: { id: wallet.id },
         data: { balance: { decrement: amount } },
-      }),
-    ]);
+      });
+
+      return { transaction, updatedWallet, reservedAmount };
+    });
 
     res.status(201).json({
       success: true,
       message: "Withdrawal completed",
       data: {
         transaction: {
-          ...transaction,
-          amount: formatDecimal(transaction.amount),
+          ...result.transaction,
+          amount: formatDecimal(result.transaction.amount),
         },
-        wallet: serializeWallet(updatedWallet, reservedAmount),
+        wallet: serializeWallet(result.updatedWallet, result.reservedAmount),
       },
     });
   },
 );
 
-// Admin
 export const listAllWallets = asyncHandler(
   async (req: RequestWithUser, res: Response) => {
     const { page = 1, limit = 20 } = req.query;
