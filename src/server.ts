@@ -7,11 +7,13 @@ import {
   stopAuctionScheduler,
 } from "./jobs/auction-scheduler";
 
+const port = Number(env.port ?? 3000);
+
 const startServer = async (): Promise<void> => {
   try {
     const app = await initializeApp();
 
-    const server = app.listen(env.port, () => {
+    const server = app.listen(port, "0.0.0.0", () => {
       console.log(
         `
 🚀 Server running in ${env.nodeEnv} mode
