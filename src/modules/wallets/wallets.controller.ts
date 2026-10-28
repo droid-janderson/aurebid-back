@@ -19,6 +19,14 @@ async function getReservedAmount(walletId: string): Promise<number> {
   return formatDecimal(aggregate._sum.amount ?? 0);
 }
 
+async function ensureWallet(userId: string) {
+  return prisma.wallet.upsert({
+    where: { userId },
+    update: {},
+    create: { userId, balance: 0 },
+  });
+}
+
 function serializeWallet(
   wallet: { id: string; balance: unknown; createdAt: Date; updatedAt: Date },
   reservedAmount: number,
@@ -45,8 +53,10 @@ export const getWallet = asyncHandler(
   async (req: RequestWithUser, res: Response) => {
     const user = req.user!;
 
-    const wallet = await prisma.wallet.findUnique({
+    const wallet = await prisma.wallet.upsert({
       where: { userId: user.id },
+      update: {},
+      create: { userId: user.id, balance: 0 },
       include: {
         transactions: {
           orderBy: { createdAt: "desc" },
@@ -63,10 +73,6 @@ export const getWallet = asyncHandler(
         },
       },
     });
-
-    if (!wallet) {
-      throw new NotFoundError("Wallet");
-    }
 
     const reservedAmount = wallet.reservations.reduce(
       (total, reservation) => total + formatDecimal(reservation.amount),
@@ -101,12 +107,7 @@ export const listTransactions = asyncHandler(
       skip,
     } = parsePaginationParams(page, limit);
 
-    const wallet = await prisma.wallet.findUnique({
-      where: { userId: user.id },
-    });
-    if (!wallet) {
-      throw new NotFoundError("Wallet");
-    }
+    const wallet = await ensureWallet(user.id);
 
     const where: any = { walletId: wallet.id };
     if (type) where.type = type;
@@ -147,12 +148,7 @@ export const deposit = asyncHandler(
     const user = req.user!;
     const { amount, method, metadata } = req.body;
 
-    const wallet = await prisma.wallet.findUnique({
-      where: { userId: user.id },
-    });
-    if (!wallet) {
-      throw new NotFoundError("Wallet");
-    }
+    const wallet = await ensureWallet(user.id);
 
     const [transaction, updatedWallet] = await prisma.$transaction([
       prisma.walletTransaction.create({
@@ -200,6 +196,8 @@ export const withdraw = asyncHandler(
     const description = destination?.pixKey
       ? `Withdrawal via ${method} to ${destination.pixKey}`
       : `Withdrawal via ${method}`;
+
+    await ensureWallet(user.id);
 
     const result = await prisma.$transaction(async (tx) => {
       const locked = await tx.$queryRaw<Array<{ id: string }>>`
