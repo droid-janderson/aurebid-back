@@ -22,7 +22,8 @@ COPY . .
 # Build application
 RUN npm run build
 
-# Production image, copy all the files and run the app
+
+# Production image
 FROM base AS runner
 WORKDIR /app
 
@@ -36,10 +37,12 @@ COPY --from=builder /app/node_modules ./node_modules
 COPY --from=builder /app/package.json ./package.json
 COPY --from=builder /app/prisma ./prisma
 
+# Allow the runtime user to access Prisma engines
+RUN chown -R nestjs:nodejs /app/node_modules /app/prisma
+
 USER nestjs
 
 EXPOSE 3000
-
 ENV PORT=3000
 
 CMD ["node", "dist/server.js"]
