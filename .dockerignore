@@ -31,9 +31,6 @@ yarn-error.log*
 # Test coverage
 coverage/
 
-# Prisma
-prisma/migrations/
-
 # Docker
 .docker/
 
