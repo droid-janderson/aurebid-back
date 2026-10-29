@@ -31,11 +31,16 @@ async function appendEvent(
   });
 }
 
+export type AffectedReservation = {
+  walletId: string;
+  userId: string;
+};
+
 export async function releaseOtherReservations(
   tx: Tx,
   batchId: string,
   keepWalletId?: string,
-): Promise<number> {
+): Promise<AffectedReservation[]> {
   const reservations = await tx.walletReservation.findMany({
     where: {
       batchId,
@@ -48,10 +53,11 @@ export async function releaseOtherReservations(
       batchId: true,
       bidId: true,
       amount: true,
+      wallet: { select: { userId: true } },
     },
   });
 
-  if (reservations.length === 0) return 0;
+  if (reservations.length === 0) return [];
 
   await tx.walletReservation.updateMany({
     where: { id: { in: reservations.map((reservation) => reservation.id) } },
@@ -62,7 +68,10 @@ export async function releaseOtherReservations(
     await appendEvent(tx, reservation, "RELEASED");
   }
 
-  return reservations.length;
+  return reservations.map((reservation) => ({
+    walletId: reservation.walletId,
+    userId: reservation.wallet.userId,
+  }));
 }
 
 export async function holdReservation(

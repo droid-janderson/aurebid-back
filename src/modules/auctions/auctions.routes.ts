@@ -30,6 +30,12 @@ router.get(
   validate(auctionQuerySchema),
   asyncHandler(auctionController.listAuctions),
 );
+router.get(
+  "/leading",
+  authenticate,
+  authorize(["BIDDER"]),
+  asyncHandler(auctionController.listLeadingAuctions),
+);
 router.get("/:id", optionalAuth, asyncHandler(auctionController.getAuctionById));
 router.get(
   "/:id/bids",

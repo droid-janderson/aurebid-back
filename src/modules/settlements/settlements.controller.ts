@@ -16,7 +16,6 @@ import {
   completeSettlement,
   createSettlementForBatch,
   failSettlement,
-  startSettlementProcessing,
 } from "./settlements.service";
 
 const settlementInclude = {
@@ -181,28 +180,6 @@ export const getSettlementByToken = asyncHandler(
     res.json({
       success: true,
       data: serializeSettlement(settlement, { revealNames: false }),
-    });
-  },
-);
-
-export const processSettlement = asyncHandler(
-  async (req: RequestWithUser, res: Response) => {
-    const user = req.user!;
-    const { id } = req.params;
-
-    const settlement = await prisma.settlement.findUnique({ where: { id } });
-    if (!settlement) {
-      throw new NotFoundError("Settlement");
-    }
-
-    assertParticipant(settlement, user);
-
-    const updated = await startSettlementProcessing(id);
-
-    res.json({
-      success: true,
-      message: "Settlement processing started",
-      data: serializeSettlement(updated),
     });
   },
 );

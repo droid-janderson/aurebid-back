@@ -7,6 +7,7 @@ export const AuctionEvents = {
   EXTENDED: "auction:extended",
   TIMER: "auction:timer",
   STATE: "auction:state",
+  WALLET_CHANGED: "wallet:changed",
   ERROR: "error",
 } as const;
 

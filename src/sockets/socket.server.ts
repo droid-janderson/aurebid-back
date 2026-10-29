@@ -19,6 +19,25 @@ interface AuthenticatedSocket extends Socket {
 
 let io: SocketIOServer | null = null;
 
+export type WalletChangeReason =
+  | "RESERVATION_HELD"
+  | "RESERVATION_UPDATED"
+  | "RESERVATION_RELEASED"
+  | "RESERVATION_CONSUMED"
+  | "DEPOSIT"
+  | "WITHDRAWAL"
+  | "SETTLEMENT";
+
+export interface WalletChangedPayload {
+  reason: WalletChangeReason;
+  batchId?: string;
+  serverTime: string;
+}
+
+function toIsoString(value: Date | string): string {
+  return value instanceof Date ? value.toISOString() : new Date(value).toISOString();
+}
+
 export function initializeSocketServer(httpServer: HTTPServer): SocketIOServer {
   io = new SocketIOServer(httpServer, {
     cors: {
@@ -31,13 +50,15 @@ export function initializeSocketServer(httpServer: HTTPServer): SocketIOServer {
   });
 
   io.use(async (socket: any, next) => {
+    socket.batchRooms = new Set();
+
     try {
       const token =
         socket.handshake.auth?.token ||
         socket.handshake.headers.authorization?.split(" ")[1];
 
       if (!token) {
-        return next(new Error("Authentication required"));
+        return next();
       }
 
       const decoded = jwt.verify(token, env.jwt.secret) as JWTPayload;
@@ -61,7 +82,6 @@ export function initializeSocketServer(httpServer: HTTPServer): SocketIOServer {
         name: user.name,
         role: user.role,
       };
-      socket.batchRooms = new Set();
 
       next();
     } catch {
@@ -71,7 +91,13 @@ export function initializeSocketServer(httpServer: HTTPServer): SocketIOServer {
 
   io.on("connection", (socket: any) => {
     const authSocket = socket as AuthenticatedSocket;
-    console.log(`Socket connected: ${authSocket.user?.name} (${socket.id})`);
+    const actor = authSocket.user?.name ?? "visitante";
+
+    if (authSocket.user) {
+      socket.join(`user:${authSocket.user.id}`);
+    }
+
+    console.log(`Socket connected: ${actor} (${socket.id})`);
 
     socket.on("auction:join", async (batchId: string) => {
       try {
@@ -113,7 +139,7 @@ export function initializeSocketServer(httpServer: HTTPServer): SocketIOServer {
           serverTime: serverTimeIso(),
         });
 
-        console.log(`User ${authSocket.user?.name} joined batch ${batchId}`);
+        console.log(`${actor} joined batch ${batchId}`);
       } catch {
         socket.emit("error", { message: "Failed to join batch" });
       }
@@ -122,7 +148,7 @@ export function initializeSocketServer(httpServer: HTTPServer): SocketIOServer {
     socket.on("auction:leave", (batchId: string) => {
       socket.leave(`auction:${batchId}`);
       authSocket.batchRooms.delete(batchId);
-      console.log(`User ${authSocket.user?.name} left batch ${batchId}`);
+      console.log(`${actor} left batch ${batchId}`);
     });
 
     socket.on("bid:place", () => {
@@ -131,9 +157,7 @@ export function initializeSocketServer(httpServer: HTTPServer): SocketIOServer {
       });
     });
     socket.on("disconnect", () => {
-      console.log(
-        `Socket disconnected: ${authSocket.user?.name} (${socket.id})`,
-      );
+      console.log(`Socket disconnected: ${actor} (${socket.id})`);
     });
   });
 
@@ -168,8 +192,8 @@ export const auctionSocket = {
     io.to(`auction:${batch.id}`).emit("auction:status_change", {
       batchId: batch.id,
       status: batch.status,
-      startsAt: batch.startsAt,
-      endsAt: batch.endsAt,
+      startsAt: toIsoString(batch.startsAt),
+      endsAt: toIsoString(batch.endsAt),
       serverTime: serverTimeIso(),
     });
   },
@@ -216,6 +240,19 @@ export const auctionSocket = {
       timeRemaining,
       serverTime: serverTimeIso(),
     });
+  },
+
+  emitWalletChanged: (
+    userId: string,
+    change: { reason: WalletChangeReason; batchId?: string },
+  ) => {
+    if (!io) return;
+    const payload: WalletChangedPayload = {
+      reason: change.reason,
+      ...(change.batchId ? { batchId: change.batchId } : {}),
+      serverTime: serverTimeIso(),
+    };
+    io.to(`user:${userId}`).emit("wallet:changed", payload);
   },
 
   broadcastToAll: (event: string, data: any) => {

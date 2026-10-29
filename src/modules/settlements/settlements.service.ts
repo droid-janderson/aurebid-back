@@ -14,6 +14,7 @@ import {
   consumeReservation,
   releaseOtherReservations,
 } from "../wallets/reservations.service";
+import { auctionSocket } from "../../sockets/auction.socket";
 
 type Tx = Prisma.TransactionClient;
 
@@ -33,7 +34,8 @@ export async function releaseBatchReservations(
   batchId: string,
   keepWalletId?: string,
 ): Promise<number> {
-  return releaseOtherReservations(tx, batchId, keepWalletId);
+  const released = await releaseOtherReservations(tx, batchId, keepWalletId);
+  return released.length;
 }
 
 type SettleResult = {
@@ -41,12 +43,43 @@ type SettleResult = {
   outcome: "SETTLED" | "ENDED_WITHOUT_BIDS" | "SKIPPED";
 };
 
+type SettlementWalletChanges = {
+  buyerId?: string;
+  sellerId?: string;
+  batchId: string;
+  releasedUserIds: string[];
+};
+
+function emitSettlementWalletChanges(changes: SettlementWalletChanges) {
+  if (changes.buyerId) {
+    auctionSocket.emitWalletChanged(changes.buyerId, {
+      reason: "SETTLEMENT",
+      batchId: changes.batchId,
+    });
+  }
+
+  if (changes.sellerId) {
+    auctionSocket.emitWalletChanged(changes.sellerId, {
+      reason: "SETTLEMENT",
+      batchId: changes.batchId,
+    });
+  }
+
+  for (const userId of new Set(changes.releasedUserIds)) {
+    if (userId === changes.buyerId || userId === changes.sellerId) continue;
+    auctionSocket.emitWalletChanged(userId, {
+      reason: "RESERVATION_RELEASED",
+      batchId: changes.batchId,
+    });
+  }
+}
+
 export async function settleBatch(
   batchId: string,
   options: { force?: boolean } = {},
 ): Promise<SettleResult> {
   try {
-    return await prisma.$transaction(async (tx) => {
+    const { result, walletChanges } = await prisma.$transaction(async (tx) => {
       const locked = await tx.$queryRaw<Array<{ id: string }>>`
         SELECT id FROM "Batch" WHERE id = ${batchId} FOR UPDATE
       `;
@@ -85,7 +118,10 @@ export async function settleBatch(
         batch.status !== "ENDED" &&
         !isPastDeadline(batch.endsAt, now)
       ) {
-        return { settlement: batch.settlement, outcome: "SKIPPED" as const };
+        return {
+          result: { settlement: batch.settlement, outcome: "SKIPPED" as const },
+          walletChanges: null,
+        };
       }
 
       const winningBid = batch.bids[0];
@@ -95,14 +131,26 @@ export async function settleBatch(
           where: { id: batch.id },
           data: { status: "ENDED" },
         });
-        await releaseOtherReservations(tx, batch.id);
-        return { settlement: null, outcome: "ENDED_WITHOUT_BIDS" as const };
+        const released = await releaseOtherReservations(tx, batch.id);
+        return {
+          result: {
+            settlement: null,
+            outcome: "ENDED_WITHOUT_BIDS" as const,
+          },
+          walletChanges: {
+            batchId: batch.id,
+            releasedUserIds: released.map((item) => item.userId),
+          },
+        };
       }
 
       if (batch.settlement?.status === "COMPLETED") {
         return {
-          settlement: batch.settlement,
-          outcome: "SETTLED" as const,
+          result: {
+            settlement: batch.settlement,
+            outcome: "SETTLED" as const,
+          },
+          walletChanges: null,
         };
       }
 
@@ -135,7 +183,10 @@ export async function settleBatch(
       const attempts = settlement.attempts + 1;
 
       if (settlement.attempts >= env.settlement.maxAttempts) {
-        return { settlement, outcome: "SKIPPED" as const };
+        return {
+          result: { settlement, outcome: "SKIPPED" as const },
+          walletChanges: null,
+        };
       }
 
       const claim = await tx.settlement.updateMany({
@@ -152,10 +203,16 @@ export async function settleBatch(
         });
 
         if (current?.status === "COMPLETED") {
-          return { settlement: current, outcome: "SETTLED" as const };
+          return {
+            result: { settlement: current, outcome: "SETTLED" as const },
+            walletChanges: null,
+          };
         }
 
-        return { settlement: current, outcome: "SKIPPED" as const };
+        return {
+          result: { settlement: current, outcome: "SKIPPED" as const },
+          walletChanges: null,
+        };
       }
 
       const amount = formatDecimal(settlement.amount);
@@ -238,7 +295,11 @@ export async function settleBatch(
       });
 
       await consumeReservation(tx, buyerWallet.id, settlement.batchId);
-      await releaseOtherReservations(tx, settlement.batchId, buyerWallet.id);
+      const releasedReservations = await releaseOtherReservations(
+        tx,
+        settlement.batchId,
+        buyerWallet.id,
+      );
 
       await tx.batch.update({
         where: { id: settlement.batchId },
@@ -258,8 +319,22 @@ export async function settleBatch(
         },
       });
 
-      return { settlement: completed, outcome: "SETTLED" as const };
+      return {
+        result: { settlement: completed, outcome: "SETTLED" as const },
+        walletChanges: {
+          buyerId: settlement.buyerId,
+          sellerId: settlement.sellerId,
+          batchId: settlement.batchId,
+          releasedUserIds: releasedReservations.map((item) => item.userId),
+        },
+      };
     });
+
+    if (walletChanges) {
+      emitSettlementWalletChanges(walletChanges);
+    }
+
+    return result;
   } catch (error) {
     await recordSettlementFailure(batchId, error);
     throw error;
@@ -312,29 +387,6 @@ export async function createSettlementForBatch(
 ) {
   const { settlement } = await settleBatch(batchId, options);
   return settlement;
-}
-
-export async function startSettlementProcessing(settlementId: string) {
-  const settlement = await prisma.settlement.findUnique({
-    where: { id: settlementId },
-  });
-
-  if (!settlement) {
-    throw new NotFoundError("Settlement");
-  }
-
-  if (settlement.status === "COMPLETED") {
-    return settlement;
-  }
-
-  if (settlement.status === "FAILED") {
-    throw new SettlementError("Settlement has failed", "SETTLEMENT_FAILED");
-  }
-
-  return prisma.settlement.update({
-    where: { id: settlementId },
-    data: { status: "PROCESSING" },
-  });
 }
 
 export async function completeSettlement(settlementId: string) {

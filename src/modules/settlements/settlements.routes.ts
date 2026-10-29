@@ -56,10 +56,5 @@ router.get(
   validate(settlementIdSchema),
   asyncHandler(settlementsController.getSettlementById),
 );
-router.post(
-  "/:id/process",
-  validate(settlementIdSchema),
-  asyncHandler(settlementsController.processSettlement),
-);
 
 export default router;

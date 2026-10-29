@@ -9,6 +9,7 @@ import {
   formatDecimal,
   formatCurrency,
 } from "../../shared/utils";
+import { auctionSocket } from "../../sockets/auction.socket";
 
 async function getReservedAmount(walletId: string): Promise<number> {
   const aggregate = await prisma.walletReservation.aggregate({
@@ -169,6 +170,8 @@ export const deposit = asyncHandler(
 
     const reservedAmount = await getReservedAmount(wallet.id);
 
+    auctionSocket.emitWalletChanged(user.id, { reason: "DEPOSIT" });
+
     res.status(201).json({
       success: true,
       message: "Deposit successful",
@@ -252,6 +255,8 @@ export const withdraw = asyncHandler(
 
       return { transaction, updatedWallet, reservedAmount };
     });
+
+    auctionSocket.emitWalletChanged(user.id, { reason: "WITHDRAWAL" });
 
     res.status(201).json({
       success: true,

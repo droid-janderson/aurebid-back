@@ -223,6 +223,36 @@ export const listAuctions = asyncHandler(
   },
 );
 
+export const listLeadingAuctions = asyncHandler(
+  async (req: RequestWithUser, res: Response) => {
+    const user = req.user!;
+    const limit = 50;
+
+    const candidates = await prisma.batch.findMany({
+      where: {
+        status: "ACTIVE",
+        deletedAt: null,
+        bids: { some: { bidderId: user.id } },
+      },
+      orderBy: { endsAt: "asc" },
+      take: limit,
+      include: batchInclude,
+    });
+
+    const leading = candidates.filter(
+      (batch) => batch.bids[0]?.bidderId === user.id,
+    );
+
+    res.json({
+      success: true,
+      data: leading.map((batch) =>
+        serializeBatch(batch, { id: user.id, role: user.role }),
+      ),
+      meta: buildPaginatedResponse(leading, leading.length, 1, limit).meta,
+    });
+  },
+);
+
 export const getAuctionById = asyncHandler(
   async (req: RequestWithUser, res: Response) => {
     const { id } = req.params;
@@ -312,12 +342,34 @@ export const cancelAuction = asyncHandler(
     const batch = await findBatchOrFail(id);
     assertCanManageBatch(user, batch.sellerId, "cancel");
 
-    if (["ENDED", "SETTLED", "CANCELLED"].includes(batch.status)) {
-      throw new ConflictError("Cannot cancel a finished batch");
-    }
-
     const updatedBatch = await prisma.$transaction(async (tx) => {
-      await tx.$queryRaw`SELECT id FROM "Batch" WHERE id = ${id} FOR UPDATE`;
+      const locked = await tx.$queryRaw<Array<{ id: string }>>`
+        SELECT id FROM "Batch" WHERE id = ${id} FOR UPDATE
+      `;
+
+      if (locked.length === 0) {
+        throw new NotFoundError("Batch");
+      }
+
+      const current = await tx.batch.findUnique({
+        where: { id },
+        select: { status: true, deletedAt: true },
+      });
+
+      if (!current || current.deletedAt) {
+        throw new NotFoundError("Batch");
+      }
+
+      if (["ENDED", "SETTLED", "CANCELLED"].includes(current.status)) {
+        throw new ConflictError("Cannot cancel a finished batch");
+      }
+
+      const bidCount = await tx.bid.count({ where: { batchId: id } });
+
+      if (bidCount > 0) {
+        throw new ConflictError("Cannot cancel a batch with bids");
+      }
+
       await releaseOtherReservations(tx, id);
 
       return tx.batch.update({
@@ -528,7 +580,11 @@ export const placeBid = asyncHandler(
 
           await appendBidAudit(tx, createdBid);
 
-          await releaseOtherReservations(tx, batch.id, wallet.id);
+          const releasedReservations = await releaseOtherReservations(
+            tx,
+            batch.id,
+            wallet.id,
+          );
 
           await holdReservation(tx, {
             walletId: wallet.id,
@@ -557,10 +613,25 @@ export const placeBid = asyncHandler(
             activated,
             status,
             startsAt: batch.startsAt,
+            releasedUserIds: releasedReservations.map(
+              (reservation) => reservation.userId,
+            ),
           };
         });
 
         auctionSocket.emitNewBid(id, result.bid);
+
+        auctionSocket.emitWalletChanged(result.bid.bidderId, {
+          reason: "RESERVATION_HELD",
+          batchId: id,
+        });
+
+        for (const userId of new Set(result.releasedUserIds)) {
+          auctionSocket.emitWalletChanged(userId, {
+            reason: "RESERVATION_RELEASED",
+            batchId: id,
+          });
+        }
 
         if (result.extended) {
           auctionSocket.emitAuctionExtended(
