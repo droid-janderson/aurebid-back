@@ -239,6 +239,9 @@ src/
 | `WalletTransaction` | Movimentações financeiras, como `DEPOSIT`, débitos e créditos de liquidação, `REFUND` e `ADJUSTMENT`. |
 | `Settlement`        | Registro da liquidação financeira entre comprador e vendedor de um lote encerrado.                    |
 
+<img width="5053" height="3305" alt="image" src="https://github.com/user-attachments/assets/3612e959-8c69-477b-b92c-5f5e47eb0880" />
+
+
 ## 🔌 Eventos WebSocket
 
 A aplicação utiliza Socket.IO para comunicação em tempo real.
